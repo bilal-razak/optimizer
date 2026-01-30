@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimizer Dashboard</title>
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body class="light-theme">
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <h1>Optimizer Dashboard</h1>
+            <p class="subtitle">Trading Strategy Parameter Optimization via Clustering Analysis</p>
+            <button id="theme-toggle-btn" class="btn btn-small theme-toggle">
+                <span class="theme-icon">&#9790;</span> Dark Mode
+            </button>
+        </header>
+
+        <!-- Step Progress Indicator -->
+        <div class="step-progress">
+            <div class="step-item active" data-step="1">
+                <div class="step-number">1</div>
+                <div class="step-label">Load Data</div>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="2">
+                <div class="step-number">2</div>
+                <div class="step-label">Heatmaps</div>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="3">
+                <div class="step-number">3</div>
+                <div class="step-label">PCA</div>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="4">
+                <div class="step-number">4</div>
+                <div class="step-label">K-Means</div>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="5">
+                <div class="step-number">5</div>
+                <div class="step-label">HDBSCAN Grid</div>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="6">
+                <div class="step-number">6</div>
+                <div class="step-label">Final HDBSCAN</div>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="7">
+                <div class="step-number">7</div>
+                <div class="step-label">Best Clusters</div>
+            </div>
+        </div>
+
+        <!-- Step 1: Load Data -->
+        <section class="step-panel active" id="step-1-panel">
+            <h2>Step 1: Load Data</h2>
+
+            <div class="config-section">
+                <h4>1. Select CSV File</h4>
+                <div class="input-row">
+                    <input type="text" id="csv-path" placeholder="Click Browse to select a CSV file" readonly>
+                    <button id="browse-btn" class="btn btn-secondary">Browse</button>
+                    <button id="load-columns-btn" class="btn btn-primary" disabled>Load Columns</button>
+                </div>
+            </div>
+
+            <div class="config-section" id="column-selection-section" style="display: none;">
+                <h4>2. Select Strategy Parameters (2-4 columns)</h4>
+                <p class="hint">These are the parameters you want to optimize. Select columns that represent your strategy configuration.</p>
+
+                <div class="column-search-box">
+                    <input type="text" id="column-search" placeholder="Search columns..." class="search-input">
+                    <span class="search-icon">&#128269;</span>
+                </div>
+
+                <div class="selected-params-display">
+                    <span class="label">Selected:</span>
+                    <div id="selected-params-tags"></div>
+                    <span id="param-count" class="param-count">0/4</span>
+                </div>
+
+                <div id="param-checkboxes" class="column-grid"></div>
+            </div>
+
+            <button id="run-step1-btn" class="btn btn-primary btn-large" disabled>
+                Load Data
+            </button>
+
+            <!-- Step 1 Results -->
+            <div id="step1-results" class="step-results" style="display: none;">
+                <h3>Data Preview</h3>
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <span class="summary-value" id="step1-num-rows">-</span>
+                        <span class="summary-label">Rows</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-value" id="step1-num-cols">-</span>
+                        <span class="summary-label">Columns</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-value" id="step1-strategy-params">-</span>
+                        <span class="summary-label">Strategy Params</span>
+                    </div>
+                </div>
+
+                <div class="data-section">
+                    <div class="section-header">
+                        <h4>DataFrame Head (First 10 rows)</h4>
+                        <div class="table-controls">
+                            <input type="text" id="table-filter" placeholder="Filter table..." class="filter-input">
+                            <select id="table-column-filter" class="column-filter-select">
+                                <option value="">All Columns</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div id="data-head-table" class="data-table-container"></div>
+                </div>
+
+                <div class="data-section">
+                    <h4>Column Information</h4>
+                    <div id="column-info-table" class="data-table-container"></div>
+                </div>
+
+                <button id="approve-step1-btn" class="btn btn-success btn-large">
+                    Continue to Step 2: Generate Heatmaps
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 2: Heatmaps (Configurable) -->
+        <section class="step-panel" id="step-2-panel">
+            <div class="step-header-with-back">
+                <button class="btn btn-secondary btn-back" data-back="1">&#8592; Back</button>
+                <h2>Step 2: Generate Heatmaps</h2>
+            </div>
+
+            <!-- Shortlist Configuration -->
+            <div class="config-section">
+                <h4>Shortlisting (Optional)</h4>
+                <div class="config-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="enable-shortlist"> Enable Shortlisting
+                    </label>
+                    <div id="shortlist-conditions" class="conditions-container" style="display: none;">
+                        <div class="condition-row">
+                            <select class="condition-metric">
+                                <option value="sharpe_ratio">Sharpe Ratio</option>
+                                <option value="sortino_ratio">Sortino Ratio</option>
+                                <option value="profit_factor">Profit Factor</option>
+                                <option value="total_pnl">Total PnL</option>
+                                <option value="win_ratio">Win Ratio</option>
+                                <option value="max_draw_down">Max Drawdown</option>
+                            </select>
+                            <select class="condition-operator">
+                                <option value=">">&gt;</option>
+                                <option value=">=">&ge;</option>
+                                <option value="<">&lt;</option>
+                                <option value="<=">&le;</option>
+                            </select>
+                            <input type="number" class="condition-value" step="0.1" value="1.5">
+                            <button class="btn btn-small btn-danger remove-condition">&#10005;</button>
+                        </div>
+                        <div class="condition-actions">
+                            <button id="add-condition-btn" class="btn btn-small btn-secondary">+ Add Condition</button>
+                            <button id="apply-shortlist-btn" class="btn btn-primary">Apply Shortlist</button>
+                        </div>
+                        <div id="shortlist-status" class="status-message"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Heatmap Generation Configuration -->
+            <div class="config-section">
+                <h4>Heatmap Generation</h4>
+                <p class="hint">Select the parameters to use for X-axis, Y-axis, and optionally a constant parameter (3rd dimension).</p>
+                <div class="heatmap-config-grid">
+                    <div class="config-group">
+                        <label for="heatmap-x-param">X-Axis Parameter</label>
+                        <select id="heatmap-x-param"></select>
+                    </div>
+                    <div class="config-group">
+                        <label for="heatmap-y-param">Y-Axis Parameter</label>
+                        <select id="heatmap-y-param"></select>
+                    </div>
+                    <div class="config-group">
+                        <label for="heatmap-const-param">Constant Parameter (optional)</label>
+                        <select id="heatmap-const-param">
+                            <option value="">None - Single heatmap per metric</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="config-group">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="show-shortlisted" disabled> Highlight Shortlisted Variants
+                    </label>
+                </div>
+            </div>
+
+            <button id="generate-heatmap-btn" class="btn btn-primary btn-large">
+                Generate All Heatmaps
+            </button>
+
+            <!-- Heatmap Results -->
+            <div id="step2-results" class="step-results" style="display: none;">
+                <h3>Parameter Landscape Heatmaps</h3>
+                <div class="heatmap-info">
+                    <span>Total Heatmaps: <strong id="step2-num-heatmaps">-</strong></span>
+                </div>
+
+                <!-- Navigation Controls -->
+                <div class="heatmap-navigation">
+                    <div class="nav-filters">
+                        <div class="nav-filter-group">
+                            <label for="nav-metric">Metric:</label>
+                            <select id="nav-metric">
+                                <option value="">All Metrics</option>
+                            </select>
+                        </div>
+                        <div class="nav-filter-group nav-filter-group-multi" id="nav-const-value-group" style="display: none;">
+                            <label>Const Values:</label>
+                            <div class="multi-select-container">
+                                <div class="multi-select-toggle" id="const-value-toggle">
+                                    <span id="const-value-display">All Values</span>
+                                    <span class="dropdown-arrow">&#9662;</span>
+                                </div>
+                                <div class="multi-select-dropdown" id="const-value-dropdown" style="display: none;">
+                                    <div class="multi-select-options" id="const-value-options"></div>
+                                    <div class="multi-select-actions">
+                                        <button type="button" class="btn btn-small" id="const-select-all">Select All</button>
+                                        <button type="button" class="btn btn-small" id="const-clear-all">Clear</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="nav-arrows">
+                        <button class="btn btn-small" id="prev-heatmap">&#8592; Prev</button>
+                        <span id="heatmap-counter">1 / 1</span>
+                        <button class="btn btn-small" id="next-heatmap">Next &#8594;</button>
+                    </div>
+                </div>
+
+                <div id="heatmap-container" class="chart-container-full"></div>
+            </div>
+
+            <button id="approve-step2-btn" class="btn btn-success btn-large" style="display: none;">
+                Continue to Step 3: PCA Analysis
+            </button>
+        </section>
+
+        <!-- Step 3: PCA -->
+        <section class="step-panel" id="step-3-panel">
+            <div class="step-header-with-back">
+                <button class="btn btn-secondary btn-back" data-back="2">&#8592; Back</button>
+                <h2>Step 3: PCA Analysis</h2>
+            </div>
+
+            <button id="run-step3-btn" class="btn btn-primary btn-large">
+                Run PCA Analysis
+            </button>
+
+            <div id="step3-results" class="step-results" style="display: none;">
+                <h3>PCA Results</h3>
+                <div class="pca-section">
+                    <h4>Explained Variance by Principal Component</h4>
+                    <div id="pca-variance-chart" class="chart-container"></div>
+                </div>
+                <div class="pca-section">
+                    <h4>PC1 vs PC2 Scatter Plot</h4>
+                    <p class="hint">Hover over points to see strategy parameters and metrics</p>
+                    <div id="pca-scatter-chart" class="chart-container"></div>
+                </div>
+                <button id="approve-step3-btn" class="btn btn-success btn-large">
+                    Continue to Step 4: K-Means
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 4: K-Means -->
+        <section class="step-panel" id="step-4-panel">
+            <div class="step-header-with-back">
+                <button class="btn btn-secondary btn-back" data-back="3">&#8592; Back</button>
+                <h2>Step 4: K-Means Clustering</h2>
+            </div>
+
+            <div class="config-section">
+                <div class="config-group">
+                    <label for="kmeans-k">Number of Clusters (k)</label>
+                    <div class="input-with-hint">
+                        <input type="number" id="kmeans-k" placeholder="Auto" min="2">
+                        <span class="hint">Leave empty for auto-calculation</span>
+                    </div>
+                </div>
+            </div>
+
+            <button id="run-step4-btn" class="btn btn-primary btn-large">
+                Run K-Means Clustering
+            </button>
+
+            <div id="step4-results" class="step-results" style="display: none;">
+                <h3>K-Means Results</h3>
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <span class="summary-value" id="step4-k-used">-</span>
+                        <span class="summary-label">K Used</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-value" id="step4-filtered-count">-</span>
+                        <span class="summary-label">Best Cluster Size</span>
+                    </div>
+                </div>
+                <div class="kmeans-scatter-section">
+                    <h4>PC1 vs PC2 Cluster Plot</h4>
+                    <p class="hint">Hover over points to see strategy parameters and metrics</p>
+                    <div id="kmeans-scatter-chart" class="chart-container"></div>
+                </div>
+                <div class="cluster-stats-section">
+                    <div class="section-header">
+                        <h4>Cluster Statistics</h4>
+                        <div class="stats-metric-selector">
+                            <label for="kmeans-stats-metric">Metric:</label>
+                            <select id="kmeans-stats-metric">
+                                <option value="sharpe_ratio" selected>Sharpe Ratio</option>
+                                <option value="sortino_ratio">Sortino Ratio</option>
+                                <option value="profit_factor">Profit Factor</option>
+                            </select>
+                        </div>
+                    </div>
+                    <p class="hint">Sharpe Ratio is used for cluster selection. Statistics show Median, Mean, and Std for the selected metric.</p>
+                    <div id="kmeans-stats-table" class="stats-table"></div>
+                </div>
+                <button id="approve-step4-btn" class="btn btn-success btn-large">
+                    Continue to Step 5: HDBSCAN Grid
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 5: HDBSCAN Grid -->
+        <section class="step-panel" id="step-5-panel">
+            <div class="step-header-with-back">
+                <button class="btn btn-secondary btn-back" data-back="4">&#8592; Back</button>
+                <h2>Step 5: HDBSCAN Configuration Grid</h2>
+            </div>
+
+            <div class="config-section">
+                <div class="heatmap-config-grid">
+                    <div class="config-group">
+                        <label>Min Cluster Sizes</label>
+                        <input type="text" id="hdbscan-min-sizes" value="3, 5, 10, 15, 20" placeholder="Comma-separated">
+                    </div>
+                    <div class="config-group">
+                        <label>Min Sample Sizes</label>
+                        <input type="text" id="hdbscan-min-samples" value="3, 5, 10, 15, 20" placeholder="Comma-separated">
+                    </div>
+                    <div class="config-group">
+                        <label for="hdbscan-threshold">Core Probability Threshold</label>
+                        <input type="number" id="hdbscan-threshold" value="0.9" min="0" max="1" step="0.05">
+                    </div>
+                    <div class="config-group">
+                        <label for="ranking-metric">Ranking Metric</label>
+                        <select id="ranking-metric">
+                            <option value="sharpe_ratio">Sharpe Ratio</option>
+                            <option value="sortino_ratio">Sortino Ratio</option>
+                            <option value="profit_factor">Profit Factor</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <button id="run-step5-btn" class="btn btn-primary btn-large">
+                Run HDBSCAN Grid Search
+            </button>
+
+            <div id="step5-results" class="step-results" style="display: none;">
+                <h3>HDBSCAN Configuration Comparison</h3>
+                <div class="tabs">
+                    <button class="tab active" data-tab="hdbscan-all">All Points</button>
+                    <button class="tab" data-tab="hdbscan-core">Core Points Only</button>
+                </div>
+                <div class="tab-content">
+                    <div id="hdbscan-all" class="tab-pane active">
+                        <div id="hdbscan-grid-chart" class="chart-container-large"></div>
+                    </div>
+                    <div id="hdbscan-core" class="tab-pane">
+                        <div id="hdbscan-core-grid-chart" class="chart-container-large"></div>
+                    </div>
+                </div>
+                <h4>Select Configuration</h4>
+                <div id="hdbscan-config-results" class="config-results-grid"></div>
+                <button id="approve-step5-btn" class="btn btn-success btn-large">
+                    Continue to Step 6
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 6: Final HDBSCAN -->
+        <section class="step-panel" id="step-6-panel">
+            <div class="step-header-with-back">
+                <button class="btn btn-secondary btn-back" data-back="5">&#8592; Back</button>
+                <h2>Step 6: Final HDBSCAN Clustering</h2>
+            </div>
+
+            <div class="config-section">
+                <div class="heatmap-config-grid">
+                    <div class="config-group">
+                        <label for="final-min-cluster-size">Min Cluster Size</label>
+                        <select id="final-min-cluster-size"></select>
+                    </div>
+                    <div class="config-group">
+                        <label for="final-min-samples">Min Samples</label>
+                        <select id="final-min-samples"></select>
+                    </div>
+                </div>
+            </div>
+
+            <button id="run-step6-btn" class="btn btn-primary btn-large">
+                Run Final HDBSCAN
+            </button>
+
+            <div id="step6-results" class="step-results" style="display: none;">
+                <h3>Final HDBSCAN Results</h3>
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <span class="summary-value" id="step6-num-clusters">-</span>
+                        <span class="summary-label">Clusters Found</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-value" id="step6-core-count">-</span>
+                        <span class="summary-label">Core Points</span>
+                    </div>
+                </div>
+
+                <div class="view-toggle-section">
+                    <div class="view-toggle-buttons">
+                        <button class="btn view-toggle-btn active" id="hdbscan-all-points-btn" data-view="all">All Points</button>
+                        <button class="btn view-toggle-btn" id="hdbscan-core-points-btn" data-view="core">Core Points Only</button>
+                    </div>
+                    <div class="core-threshold-control">
+                        <label for="core-probability-threshold">Core Probability Threshold:</label>
+                        <input type="number" id="core-probability-threshold" value="0.95" min="0" max="1" step="0.05">
+                        <button class="btn btn-small" id="apply-core-threshold-btn">Apply</button>
+                    </div>
+                </div>
+
+                <div id="hdbscan-final-scatter-chart" class="chart-container"></div>
+                <h4>Cluster Statistics</h4>
+                <div id="hdbscan-final-stats-table" class="stats-table"></div>
+                <button id="approve-step6-btn" class="btn btn-success btn-large">
+                    Continue to Step 7: Best Clusters
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 7: Best Clusters -->
+        <section class="step-panel" id="step-7-panel">
+            <div class="step-header-with-back">
+                <button class="btn btn-secondary btn-back" data-back="6">&#8592; Back</button>
+                <h2>Step 7: Best Clusters Analysis</h2>
+            </div>
+
+            <div class="config-section">
+                <div class="config-group">
+                    <label for="num-best-clusters">Number of Best Clusters</label>
+                    <input type="number" id="num-best-clusters" value="2" min="1" max="10">
+                </div>
+            </div>
+
+            <button id="run-step7-btn" class="btn btn-primary btn-large">
+                Get Best Clusters
+            </button>
+
+            <div id="step7-results" class="step-results" style="display: none;">
+                <h3>Best Clusters</h3>
+                <div class="summary-info">
+                    <span>Best Cluster IDs: <strong id="step7-cluster-ids">-</strong></span>
+                </div>
+                <div id="best-clusters-container"></div>
+                <div class="completion-message">
+                    <h3>Optimization Complete!</h3>
+                    <button id="restart-btn" class="btn btn-secondary btn-large">
+                        Start New Optimization
+                    </button>
+                </div>
+            </div>
+        </section>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p id="loading-message">Processing...</p>
+        </div>
+    </div>
+
+    <!-- File Browser Modal -->
+    <div id="file-browser-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select CSV File</h3>
+                <button id="close-modal-btn" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="browser-path">
+                    <button id="go-up-btn" class="btn btn-small">&#8593; Up</button>
+                    <input type="text" id="current-path" class="path-input" readonly>
+                    <button id="go-to-path-btn" class="btn btn-small">Go</button>
+                </div>
+                <div class="browser-contents">
+                    <div id="browser-loading" class="browser-loading" style="display: none;">
+                        <div class="spinner-small"></div>
+                        <span>Loading...</span>
+                    </div>
+                    <ul id="file-list" class="file-list"></ul>
+                </div>
+                <div class="selected-file" id="selected-file-container" style="display: none;">
+                    <label>Selected:</label>
+                    <span id="selected-file-name"></span>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancel-browse-btn" class="btn btn-secondary">Cancel</button>
+                <button id="confirm-browse-btn" class="btn btn-primary" disabled>Select File</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
