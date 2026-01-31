@@ -580,7 +580,7 @@ select option {
     padding: 8px 16px;
 }
 
-/* ==================== Step Header with Back Button ==================== */
+/* ==================== Step Header with Back/Forward Buttons ==================== */
 .step-header-with-back {
     display: flex;
     align-items: center;
@@ -594,6 +594,11 @@ select option {
     margin: 0;
     border: none;
     padding: 0;
+    flex: 1;
+}
+
+.btn-forward {
+    margin-left: auto;
 }
 
 /* ==================== Loading ==================== */
@@ -1630,6 +1635,20 @@ input[type="checkbox"] {
     color: var(--success-color);
 }
 
+/* Clickable step items for navigation */
+.step-item.clickable {
+    cursor: pointer;
+}
+
+.step-item.clickable:hover .step-number {
+    transform: scale(1.1);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.step-item.clickable.completed:hover .step-number {
+    background: #15803d;
+}
+
 .step-connector {
     width: 40px;
     height: 2px;
@@ -1710,6 +1729,30 @@ input[type="checkbox"] {
     margin-bottom: 20px;
 }
 
+/* ==================== Chart Container Responsiveness ==================== */
+.chart-container,
+.chart-container-full,
+.chart-container-large {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+/* Ensure Plotly charts are responsive */
+.js-plotly-plot,
+.plot-container.plotly {
+    width: 100% !important;
+}
+
+/* Heatmap scroll container */
+.heatmap-scroll-container {
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    max-width: 100%;
+}
+
 /* ==================== Responsive ==================== */
 @media (max-width: 768px) {
     .header h1 {
@@ -1770,6 +1813,61 @@ input[type="checkbox"] {
     .column-filter-select {
         flex: 1;
     }
+
+    /* Mobile chart responsiveness */
+    .chart-container,
+    .chart-container-full {
+        min-height: 350px;
+        padding: 5px;
+    }
+
+    .chart-container-large {
+        min-height: 500px;
+    }
+
+    .cluster-heatmap {
+        min-height: 350px;
+        overflow-x: scroll;
+    }
+
+    /* Heatmap navigation mobile layout */
+    .heatmap-navigation {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .nav-filters {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .nav-filter-group {
+        width: 100%;
+    }
+
+    .nav-filter-group select {
+        flex: 1;
+    }
+
+    .nav-arrows {
+        justify-content: center;
+        margin-top: 10px;
+    }
+
+    /* Cluster section mobile adjustments */
+    .cluster-heatmap-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .cluster-filter-row {
+        flex-direction: column;
+        gap: 10px;
+    }
+
+    .cluster-heatmap-nav {
+        margin-top: 10px;
+    }
 }
 
 @media (max-width: 900px) {
@@ -1808,5 +1906,349 @@ input[type="checkbox"] {
 
     .step-item {
         min-width: 70px;
+    }
+
+    /* Small mobile chart adjustments */
+    .chart-container,
+    .chart-container-full {
+        min-height: 300px;
+    }
+
+    .chart-half {
+        min-height: 250px;
+    }
+}
+
+/* ==================== Tablet Adjustments ==================== */
+@media (min-width: 769px) and (max-width: 1024px) {
+    .container {
+        padding: 15px;
+    }
+
+    .chart-row {
+        grid-template-columns: 1fr;
+        gap: 15px;
+    }
+
+    .config-grid {
+        gap: 15px;
+    }
+
+    .report-config-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .cluster-section {
+        padding: 15px;
+    }
+
+    .heatmap-config-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    /* Ensure heatmaps have scroll on tablets */
+    .chart-container-full,
+    .cluster-heatmap {
+        overflow-x: auto;
+    }
+}
+
+/* ============== Step 8: Report Generation Styles ============== */
+
+.report-title-input {
+    width: 100%;
+    max-width: 600px;
+    padding: 12px 15px;
+    font-size: 1.1rem;
+}
+
+.report-config-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 20px;
+    margin: 20px 0;
+}
+
+.config-card {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius);
+    padding: 20px;
+}
+
+.config-card h5 {
+    font-size: 1rem;
+    color: var(--primary-color);
+    margin: 0 0 15px 0;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.config-item {
+    margin-bottom: 12px;
+}
+
+.config-item:last-child {
+    margin-bottom: 0;
+}
+
+.config-item label {
+    display: block;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+.config-item input,
+.config-item select {
+    width: 100%;
+    padding: 8px 10px;
+    font-size: 0.9rem;
+}
+
+.config-readonly {
+    background-color: var(--bg-color);
+    cursor: not-allowed;
+    opacity: 0.8;
+}
+
+.config-value {
+    font-weight: 600;
+    color: var(--text-color);
+}
+
+.param-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.param-tags .tag {
+    background-color: var(--primary-glow);
+    color: var(--primary-color);
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+}
+
+.shortlist-summary {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.shortlist-summary .condition {
+    background-color: var(--bg-color);
+    padding: 5px 10px;
+    border-radius: 4px;
+    margin: 3px 0;
+    font-family: monospace;
+}
+
+.output-options {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.output-options .config-item {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.save-path-input {
+    flex: 1;
+    max-width: 400px;
+}
+
+.save-path-input:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.report-actions {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin-top: 20px;
+}
+
+/* Success message styling */
+.completion-message.success {
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05));
+    border: 1px solid var(--success-color);
+}
+
+.completion-message.success h3 {
+    color: var(--success-color);
+}
+
+#report-status-message {
+    margin-top: 10px;
+    color: var(--text-muted);
+}
+
+/* Report shortlist conditions */
+.shortlist-conditions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.report-condition-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.report-condition-row select {
+    width: auto;
+    min-width: 100px;
+    padding: 6px 8px;
+    font-size: 0.85rem;
+}
+
+.report-condition-row .report-condition-metric {
+    min-width: 130px;
+}
+
+.report-condition-row .report-condition-operator {
+    min-width: 60px;
+}
+
+.report-condition-row .report-condition-value {
+    width: 80px;
+    padding: 6px 8px;
+    font-size: 0.85rem;
+}
+
+.report-condition-row .remove-condition {
+    background: none;
+    border: none;
+    color: var(--danger-color);
+    font-size: 1.2rem;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: var(--radius);
+    transition: background-color 0.2s;
+}
+
+.report-condition-row .remove-condition:hover {
+    background-color: rgba(220, 38, 38, 0.1);
+}
+
+/* Report filename input */
+.report-filename-input {
+    max-width: 300px;
+}
+
+/* Input with browse button */
+.input-with-browse {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    max-width: 500px;
+}
+
+.input-with-browse input {
+    flex: 1;
+}
+
+.input-with-browse .btn {
+    flex-shrink: 0;
+}
+
+/* Report popup modal */
+.popup-content {
+    max-width: 450px;
+    text-align: center;
+    padding: 30px;
+}
+
+.popup-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    font-size: 30px;
+}
+
+.popup-icon.success-icon {
+    background-color: rgba(34, 197, 94, 0.15);
+    color: var(--success-color);
+}
+
+.popup-icon.error-icon {
+    background-color: rgba(220, 38, 38, 0.15);
+    color: var(--danger-color);
+}
+
+.popup-content h3 {
+    margin: 0 0 10px;
+    color: var(--text-color);
+}
+
+.popup-content p {
+    margin: 0 0 10px;
+    color: var(--text-muted);
+}
+
+.popup-path {
+    font-family: monospace;
+    font-size: 0.85rem;
+    background-color: var(--bg-color);
+    padding: 10px;
+    border-radius: var(--radius);
+    word-break: break-all;
+    margin-bottom: 20px !important;
+}
+
+.popup-content .btn {
+    min-width: 100px;
+}
+
+/* Dark theme adjustments for Step 8 */
+body.dark-theme .config-card {
+    background-color: var(--card-bg);
+}
+
+body.dark-theme .config-readonly {
+    background-color: var(--bg-secondary);
+}
+
+body.dark-theme .param-tags .tag {
+    background-color: rgba(59, 130, 246, 0.2);
+    color: #60a5fa;
+}
+
+body.dark-theme .shortlist-summary .condition {
+    background-color: var(--bg-secondary);
+}
+
+/* Responsive adjustments for Step 8 */
+@media (max-width: 768px) {
+    .report-config-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .output-options .config-item {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .save-path-input {
+        width: 100%;
+        max-width: none;
+        margin-top: 8px;
     }
 }

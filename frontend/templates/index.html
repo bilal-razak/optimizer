@@ -54,6 +54,11 @@
                 <div class="step-number">7</div>
                 <div class="step-label">Best Clusters</div>
             </div>
+            <div class="step-connector"></div>
+            <div class="step-item" data-step="8">
+                <div class="step-number">8</div>
+                <div class="step-label">Report</div>
+            </div>
         </div>
 
         <!-- Step 1: Load Data -->
@@ -61,9 +66,10 @@
             <h2>Step 1: Load Data</h2>
 
             <div class="config-section">
-                <h4>1. Select CSV File</h4>
+                <h4>1. Select CSV File(s)</h4>
+                <p class="hint">You can select multiple CSV files with identical columns - they will be combined.</p>
                 <div class="input-row">
-                    <input type="text" id="csv-path" placeholder="Click Browse to select a CSV file" readonly>
+                    <input type="text" id="csv-path" placeholder="Click Browse to select CSV file(s)" readonly>
                     <button id="browse-btn" class="btn btn-secondary">Browse</button>
                     <button id="load-columns-btn" class="btn btn-primary" disabled>Load Columns</button>
                 </div>
@@ -95,9 +101,13 @@
             <div id="step1-results" class="step-results" style="display: none;">
                 <h3>Data Preview</h3>
                 <div class="summary-cards">
+                    <div class="summary-card" id="step1-files-card" style="display: none;">
+                        <span class="summary-value" id="step1-num-files">-</span>
+                        <span class="summary-label">Files</span>
+                    </div>
                     <div class="summary-card">
                         <span class="summary-value" id="step1-num-rows">-</span>
-                        <span class="summary-label">Rows</span>
+                        <span class="summary-label">Total Rows</span>
                     </div>
                     <div class="summary-card">
                         <span class="summary-value" id="step1-num-cols">-</span>
@@ -138,6 +148,7 @@
             <div class="step-header-with-back">
                 <button class="btn btn-secondary btn-back" data-back="1">&#8592; Back</button>
                 <h2>Step 2: Generate Heatmaps</h2>
+                <button class="btn btn-secondary btn-forward" data-forward="3" style="display: none;">Forward &#8594;</button>
             </div>
 
             <!-- Shortlist Configuration -->
@@ -259,6 +270,7 @@
             <div class="step-header-with-back">
                 <button class="btn btn-secondary btn-back" data-back="2">&#8592; Back</button>
                 <h2>Step 3: PCA Analysis</h2>
+                <button class="btn btn-secondary btn-forward" data-forward="4" style="display: none;">Forward &#8594;</button>
             </div>
 
             <button id="run-step3-btn" class="btn btn-primary btn-large">
@@ -287,6 +299,7 @@
             <div class="step-header-with-back">
                 <button class="btn btn-secondary btn-back" data-back="3">&#8592; Back</button>
                 <h2>Step 4: K-Means Clustering</h2>
+                <button class="btn btn-secondary btn-forward" data-forward="5" style="display: none;">Forward &#8594;</button>
             </div>
 
             <div class="config-section">
@@ -346,6 +359,7 @@
             <div class="step-header-with-back">
                 <button class="btn btn-secondary btn-back" data-back="4">&#8592; Back</button>
                 <h2>Step 5: HDBSCAN Configuration Grid</h2>
+                <button class="btn btn-secondary btn-forward" data-forward="6" style="display: none;">Forward &#8594;</button>
             </div>
 
             <div class="config-section">
@@ -404,6 +418,7 @@
             <div class="step-header-with-back">
                 <button class="btn btn-secondary btn-back" data-back="5">&#8592; Back</button>
                 <h2>Step 6: Final HDBSCAN Clustering</h2>
+                <button class="btn btn-secondary btn-forward" data-forward="7" style="display: none;">Forward &#8594;</button>
             </div>
 
             <div class="config-section">
@@ -462,6 +477,7 @@
             <div class="step-header-with-back">
                 <button class="btn btn-secondary btn-back" data-back="6">&#8592; Back</button>
                 <h2>Step 7: Best Clusters Analysis</h2>
+                <button class="btn btn-secondary btn-forward" data-forward="8" style="display: none;">Forward &#8594;</button>
             </div>
 
             <div class="config-section">
@@ -481,8 +497,141 @@
                     <span>Best Cluster IDs: <strong id="step7-cluster-ids">-</strong></span>
                 </div>
                 <div id="best-clusters-container"></div>
-                <div class="completion-message">
-                    <h3>Optimization Complete!</h3>
+                <button id="approve-step7-btn" class="btn btn-success btn-large">
+                    Continue to Step 8: Generate Report
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 8: Generate Report -->
+        <section class="step-panel" id="step-8-panel">
+            <div class="step-header-with-back">
+                <button class="btn btn-secondary btn-back" data-back="7">&#8592; Back</button>
+                <h2>Step 8: Generate Report</h2>
+            </div>
+
+            <div class="config-section">
+                <h4>Report Title</h4>
+                <div class="config-group">
+                    <input type="text" id="report-title" placeholder="e.g., NIFTY 50 - Momentum Strategy Optimization" class="report-title-input">
+                    <p class="hint">This will appear on the title page of your report</p>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h4>Configuration Summary</h4>
+                <p class="hint">Review and modify the configuration used for the report. These values are pre-filled from your session.</p>
+
+                <div class="report-config-grid">
+                    <!-- Load Data Config -->
+                    <div class="config-card">
+                        <h5>Load Data (Step 1)</h5>
+                        <div class="config-item">
+                            <label>CSV Path:</label>
+                            <input type="text" id="report-csv-path" readonly class="config-readonly">
+                        </div>
+                        <div class="config-item">
+                            <label>Strategy Parameters:</label>
+                            <div id="report-strategy-params" class="param-tags"></div>
+                        </div>
+                        <div class="config-item">
+                            <label>Total Variants:</label>
+                            <span id="report-num-variants" class="config-value">-</span>
+                        </div>
+                    </div>
+
+                    <!-- Heatmap Config -->
+                    <div class="config-card">
+                        <h5>Heatmaps (Step 2)</h5>
+                        <div class="config-item">
+                            <label>X-Axis:</label>
+                            <select id="report-x-param"></select>
+                        </div>
+                        <div class="config-item">
+                            <label>Y-Axis:</label>
+                            <select id="report-y-param"></select>
+                        </div>
+                        <div class="config-item">
+                            <label>Constant Param:</label>
+                            <select id="report-const-param">
+                                <option value="">None</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <!-- Shortlist Config -->
+                    <div class="config-card">
+                        <h5>Shortlist (Step 2b)</h5>
+                        <div class="config-item">
+                            <label class="toggle-label">
+                                <input type="checkbox" id="report-shortlist-enabled"> Enabled
+                            </label>
+                        </div>
+                        <div id="report-shortlist-conditions" class="shortlist-conditions-list"></div>
+                        <button type="button" id="report-add-condition-btn" class="btn btn-small btn-secondary" style="margin-top: 8px;">+ Add Condition</button>
+                    </div>
+
+                    <!-- K-Means Config -->
+                    <div class="config-card">
+                        <h5>K-Means (Step 4)</h5>
+                        <div class="config-item">
+                            <label>K Value:</label>
+                            <input type="number" id="report-kmeans-k" min="2" placeholder="Auto">
+                        </div>
+                    </div>
+
+                    <!-- HDBSCAN Config -->
+                    <div class="config-card">
+                        <h5>HDBSCAN (Steps 5-6)</h5>
+                        <div class="config-item">
+                            <label>Min Cluster Size:</label>
+                            <input type="number" id="report-hdbscan-min-size" min="2">
+                        </div>
+                        <div class="config-item">
+                            <label>Min Samples:</label>
+                            <input type="number" id="report-hdbscan-min-samples" min="1">
+                        </div>
+                        <div class="config-item">
+                            <label>Core Prob Threshold:</label>
+                            <input type="number" id="report-core-threshold" min="0" max="1" step="0.05" value="0.95">
+                        </div>
+                    </div>
+
+                    <!-- Best Clusters Config -->
+                    <div class="config-card">
+                        <h5>Best Clusters (Step 7)</h5>
+                        <div class="config-item">
+                            <label>Number of Clusters:</label>
+                            <input type="number" id="report-num-clusters" min="1" max="10" value="2">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="config-section">
+                <h4>Output Options</h4>
+                <div class="output-options">
+                    <div class="config-item">
+                        <label>Filename:</label>
+                        <input type="text" id="report-filename" placeholder="optimization_report.pdf" class="report-filename-input">
+                        <p class="hint">Leave empty for auto-generated filename</p>
+                    </div>
+                    <div class="config-item">
+                        <label>Save to Directory:</label>
+                        <div class="input-with-browse">
+                            <input type="text" id="report-save-path" placeholder="Select directory..." readonly>
+                            <button type="button" id="report-browse-btn" class="btn btn-secondary">Browse</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <button id="generate-report-btn" class="btn btn-primary btn-large">
+                Generate PDF Report
+            </button>
+
+            <div id="step8-results" class="step-results" style="display: none;">
+                <div class="report-actions">
                     <button id="restart-btn" class="btn btn-secondary btn-large">
                         Start New Optimization
                     </button>
@@ -526,6 +675,17 @@
                 <button id="cancel-browse-btn" class="btn btn-secondary">Cancel</button>
                 <button id="confirm-browse-btn" class="btn btn-primary" disabled>Select File</button>
             </div>
+        </div>
+    </div>
+
+    <!-- Report Generated Popup Modal -->
+    <div id="report-popup-modal" class="modal">
+        <div class="modal-content popup-content">
+            <div class="popup-icon success-icon">&#10003;</div>
+            <h3 id="popup-title">Report Generated Successfully!</h3>
+            <p id="popup-message">Your report has been saved.</p>
+            <p id="popup-path" class="popup-path"></p>
+            <button id="close-popup-btn" class="btn btn-primary">OK</button>
         </div>
     </div>
 

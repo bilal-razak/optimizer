@@ -1,13 +1,67 @@
 """Visualization functions for optimization pipeline - returns Plotly JSON."""
 
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+
+# Import scipy for convex hulls (optional - will gracefully degrade if not available)
+try:
+    from scipy.spatial import ConvexHull
+    SCIPY_AVAILABLE = True
+except ImportError:
+    SCIPY_AVAILABLE = False
+
+
+# ==================== Chart Constants ====================
+
+# Standard chart dimensions
+CHART_HEIGHT_STANDARD = 550
+CHART_HEIGHT_LARGE = 800
+CHART_HEIGHT_GRID = 450
+
+# Marker defaults for consistent styling
+MARKER_DEFAULTS = {
+    'size': 10,
+    'opacity': 0.85,
+    'line_width': 1.5,
+    'line_color': 'white'
+}
+
+# Bright color palette for clusters
+CLUSTER_COLORS = [
+    '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
+    '#ffff33', '#a65628', '#f781bf', '#999999', '#66c2a5'
+]
+
+# Enhanced 9-stop RdYlGn colorscale with better contrast
+COLORSCALE_RDYLGN = [
+    [0.0, '#a50026'],    # Dark red (very low/bad)
+    [0.125, '#d73027'],  # Red
+    [0.25, '#f46d43'],   # Orange-red
+    [0.375, '#fdae61'],  # Orange
+    [0.5, '#fee08b'],    # Yellow (middle)
+    [0.625, '#d9ef8b'],  # Light green
+    [0.75, '#a6d96a'],   # Green
+    [0.875, '#66bd63'],  # Medium green
+    [1.0, '#1a9850']     # Dark green (high/good)
+]
+
+COLORSCALE_RDYLGN_R = [
+    [0.0, '#1a9850'],    # Dark green (low/good for drawdown)
+    [0.125, '#66bd63'],
+    [0.25, '#a6d96a'],
+    [0.375, '#d9ef8b'],
+    [0.5, '#fee08b'],    # Yellow (middle)
+    [0.625, '#fdae61'],
+    [0.75, '#f46d43'],
+    [0.875, '#d73027'],
+    [1.0, '#a50026']     # Dark red (high/bad for drawdown)
+]
 
 
 # Standard metrics for heatmaps (matching notebook order)
@@ -25,6 +79,129 @@ HEATMAP_METRICS = [
 def _fig_to_json(fig: go.Figure) -> Dict[str, Any]:
     """Convert Plotly figure to JSON dict."""
     return json.loads(fig.to_json())
+
+
+def _calculate_percentiles_and_ranks(values: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    Calculate percentiles and ranks for an array of values.
+
+    Args:
+        values: Array of numeric values
+
+    Returns:
+        Tuple of (percentiles, ranks) arrays
+    """
+    # Handle NaN values
+    valid_mask = np.isfinite(values)
+    n_valid = np.sum(valid_mask)
+
+    percentiles = np.full_like(values, np.nan, dtype=float)
+    ranks = np.full_like(values, np.nan, dtype=float)
+
+    if n_valid > 0:
+        valid_values = values[valid_mask]
+        # Calculate percentiles (0-100)
+        sorted_indices = np.argsort(valid_values)
+        percentile_values = (np.arange(n_valid) / (n_valid - 1) * 100) if n_valid > 1 else np.array([50.0])
+
+        # Map back to original positions
+        temp_percentiles = np.zeros(n_valid)
+        temp_percentiles[sorted_indices] = percentile_values
+        percentiles[valid_mask] = temp_percentiles
+
+        # Calculate ranks (1 = best, n = worst, higher values = better rank)
+        temp_ranks = np.zeros(n_valid)
+        temp_ranks[sorted_indices] = np.arange(n_valid, 0, -1)
+        ranks[valid_mask] = temp_ranks
+
+    return percentiles, ranks
+
+
+def _calculate_cluster_centroids(
+    df: pd.DataFrame,
+    cluster_col: str = 'cluster'
+) -> Dict[int, Tuple[float, float]]:
+    """
+    Calculate the centroid (mean PC1, PC2) for each cluster.
+
+    Args:
+        df: DataFrame with PC1, PC2 and cluster column
+        cluster_col: Name of cluster column
+
+    Returns:
+        Dict mapping cluster_id to (centroid_x, centroid_y)
+    """
+    centroids = {}
+    for cluster_id in df[cluster_col].unique():
+        if cluster_id == -1:  # Skip noise
+            continue
+        cluster_data = df[df[cluster_col] == cluster_id]
+        centroid_x = cluster_data['PC1'].mean()
+        centroid_y = cluster_data['PC2'].mean()
+        centroids[cluster_id] = (centroid_x, centroid_y)
+    return centroids
+
+
+def _get_convex_hull_boundary(
+    points: np.ndarray
+) -> Optional[np.ndarray]:
+    """
+    Get the convex hull boundary points for a set of 2D points.
+
+    Args:
+        points: Nx2 array of (x, y) points
+
+    Returns:
+        Array of boundary points (closed polygon) or None if hull cannot be computed
+    """
+    if not SCIPY_AVAILABLE:
+        return None
+
+    if len(points) < 3:
+        return None
+
+    try:
+        hull = ConvexHull(points)
+        # Get hull vertices and close the polygon
+        hull_points = points[hull.vertices]
+        # Close the polygon by appending the first point
+        hull_points = np.vstack([hull_points, hull_points[0]])
+        return hull_points
+    except Exception:
+        return None
+
+
+def _get_cluster_stats_annotation(
+    df: pd.DataFrame,
+    cluster_col: str,
+    metric_col: str = 'sharpe_ratio'
+) -> Dict[int, Dict[str, Any]]:
+    """
+    Get statistics for each cluster for annotation purposes.
+
+    Args:
+        df: DataFrame with cluster and metric columns
+        cluster_col: Name of cluster column
+        metric_col: Name of metric column for stats
+
+    Returns:
+        Dict mapping cluster_id to stats dict with n, mean, etc.
+    """
+    stats = {}
+    for cluster_id in df[cluster_col].unique():
+        if cluster_id == -1:
+            continue
+        cluster_data = df[df[cluster_col] == cluster_id]
+        if metric_col in cluster_data.columns:
+            stats[cluster_id] = {
+                'n': len(cluster_data),
+                'mean': cluster_data[metric_col].mean(),
+                'median': cluster_data[metric_col].median(),
+                'std': cluster_data[metric_col].std()
+            }
+        else:
+            stats[cluster_id] = {'n': len(cluster_data)}
+    return stats
 
 
 def generate_pca_variance_chart(
@@ -112,7 +289,9 @@ def generate_pca_variance_chart(
 def generate_pca_scatter(
     pca_df: pd.DataFrame,
     hover_data: Optional[Dict[str, pd.Series]] = None,
-    metrics_data: Optional[Dict[str, pd.Series]] = None
+    metrics_data: Optional[Dict[str, pd.Series]] = None,
+    color_by_metric: Optional[str] = None,
+    show_density_contours: bool = False
 ) -> Dict[str, Any]:
     """
     Generate interactive PCA scatter plot (PC1 vs PC2) with visible points.
@@ -121,6 +300,8 @@ def generate_pca_scatter(
         pca_df: DataFrame with PC columns
         hover_data: Optional dict of strategy params for hover
         metrics_data: Optional dict of metrics for hover (sharpe, sortino, profit_factor)
+        color_by_metric: Optional metric column name to color points by
+        show_density_contours: Whether to show density contours
 
     Returns:
         Plotly JSON dict
@@ -170,15 +351,46 @@ def generate_pca_scatter(
 
     fig = go.Figure()
 
+    # Add density contours if requested
+    if show_density_contours:
+        fig.add_trace(go.Histogram2dContour(
+            x=x_data,
+            y=y_data,
+            colorscale='Blues',
+            reversescale=True,
+            showscale=False,
+            contours=dict(
+                showlabels=False,
+                coloring='heatmap'
+            ),
+            opacity=0.3,
+            hoverinfo='skip',
+            name='Density'
+        ))
+
+    # Determine marker color
+    if color_by_metric and color_by_metric in df.columns:
+        color_values = df[color_by_metric].tolist()
+        marker_config = dict(
+            size=MARKER_DEFAULTS['size'],
+            color=color_values,
+            colorscale='Viridis',
+            showscale=True,
+            colorbar=dict(title=color_by_metric),
+            line=dict(width=MARKER_DEFAULTS['line_width'], color=MARKER_DEFAULTS['line_color'])
+        )
+    else:
+        marker_config = dict(
+            size=MARKER_DEFAULTS['size'],
+            color='rgba(59, 130, 246, 0.8)',  # Blue with alpha
+            line=dict(width=MARKER_DEFAULTS['line_width'], color='rgba(255, 255, 255, 0.8)')
+        )
+
     fig.add_trace(go.Scattergl(
         x=x_data,
         y=y_data,
         mode='markers',
-        marker=dict(
-            size=8,
-            color='rgba(59, 130, 246, 0.8)',  # Blue with alpha
-            line=dict(width=1, color='rgba(255, 255, 255, 0.8)')
-        ),
+        marker=marker_config,
         text=hover_texts,
         hoverinfo='text',
         name='Variants'
@@ -206,7 +418,15 @@ def generate_pca_scatter(
             zerolinecolor='gray'
         ),
         hovermode='closest',
-        height=550
+        height=CHART_HEIGHT_STANDARD,
+        legend=dict(
+            orientation='h',
+            yanchor='bottom',
+            y=-0.15,
+            xanchor='center',
+            x=0.5
+        ),
+        margin=dict(b=80)  # More bottom margin for legend
     )
 
     return _fig_to_json(fig)
@@ -217,7 +437,11 @@ def generate_cluster_scatter(
     cluster_col: str,
     hover_cols: List[str],
     title: str = "Cluster Scatter Plot",
-    metrics_cols: Optional[List[str]] = None
+    metrics_cols: Optional[List[str]] = None,
+    show_centroids: bool = False,
+    show_hulls: bool = True,
+    show_stats_annotations: bool = False,
+    ranking_metric: str = 'sharpe_ratio'
 ) -> Dict[str, Any]:
     """
     Generate cluster scatter plot colored by cluster with visible points.
@@ -228,6 +452,10 @@ def generate_cluster_scatter(
         hover_cols: Strategy param columns to show on hover
         title: Plot title
         metrics_cols: Optional list of metric columns for hover
+        show_centroids: Whether to show cluster centroids
+        show_hulls: Whether to show convex hull boundaries
+        show_stats_annotations: Whether to show n= and mean metric per cluster
+        ranking_metric: Metric to use for stats annotations
 
     Returns:
         Plotly JSON dict
@@ -240,15 +468,37 @@ def generate_cluster_scatter(
 
     fig = go.Figure()
 
-    # Color palette - bright colors for visibility
-    colors = [
-        '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
-        '#ffff33', '#a65628', '#f781bf', '#999999', '#66c2a5'
-    ]
+    # Calculate centroids and stats for annotations
+    centroids = _calculate_cluster_centroids(plot_df, cluster_col)
+    cluster_stats = _get_cluster_stats_annotation(plot_df, cluster_col, ranking_metric)
 
     for i, cluster in enumerate(clusters):
         cluster_data = plot_df[plot_df[cluster_col] == cluster]
-        color = colors[i % len(colors)]
+
+        # Color: gray for noise (-1), bright colors for others
+        if cluster == -1:
+            color = 'rgba(180, 180, 180, 0.5)'
+            cluster_name = 'Noise'
+        else:
+            color = CLUSTER_COLORS[int(cluster) % len(CLUSTER_COLORS)]
+            cluster_name = f'Cluster {cluster}'
+
+        # Add convex hull boundary if requested and available
+        if show_hulls and cluster != -1 and SCIPY_AVAILABLE:
+            points = cluster_data[['PC1', 'PC2']].values
+            hull_boundary = _get_convex_hull_boundary(points)
+            if hull_boundary is not None:
+                fig.add_trace(go.Scatter(
+                    x=hull_boundary[:, 0].tolist(),
+                    y=hull_boundary[:, 1].tolist(),
+                    mode='lines',
+                    line=dict(color=color, width=2, dash='dot'),
+                    fill='toself',
+                    fillcolor=f'rgba{tuple(list(int(color.lstrip("#")[i:i+2], 16) for i in (0, 2, 4)) + [0.1])}' if color.startswith('#') else 'rgba(200,200,200,0.1)',
+                    showlegend=False,
+                    hoverinfo='skip',
+                    name=f'Hull {cluster}'
+                ))
 
         # Build custom hover text
         hover_texts = []
@@ -289,21 +539,70 @@ def generate_cluster_scatter(
             y=y_data,
             mode='markers',
             marker=dict(
-                size=10,
+                size=MARKER_DEFAULTS['size'],
                 color=color,
-                opacity=0.85,
-                line=dict(width=1, color='white')
+                opacity=MARKER_DEFAULTS['opacity'],
+                line=dict(width=MARKER_DEFAULTS['line_width'], color=MARKER_DEFAULTS['line_color'])
             ),
             text=hover_texts,
             hoverinfo='text',
-            name=f'Cluster {cluster}'
+            name=cluster_name
         ))
+
+        # Add centroid marker if requested
+        if show_centroids and cluster != -1 and cluster in centroids:
+            cx, cy = centroids[cluster]
+            fig.add_trace(go.Scatter(
+                x=[cx],
+                y=[cy],
+                mode='markers',
+                marker=dict(
+                    size=15,
+                    color=color,
+                    symbol='x',
+                    line=dict(width=3, color='black')
+                ),
+                showlegend=False,
+                hoverinfo='text',
+                text=f'Centroid Cluster {cluster}',
+                name=f'Centroid {cluster}'
+            ))
+
+    # Add stats annotations
+    annotations = []
+    if show_stats_annotations:
+        for cluster_id, stats in cluster_stats.items():
+            if cluster_id in centroids:
+                cx, cy = centroids[cluster_id]
+                n = stats.get('n', 0)
+                mean_val = stats.get('mean', None)
+                annotation_text = f"n={n}"
+                if mean_val is not None:
+                    annotation_text += f"<br>μ={mean_val:.3f}"
+
+                annotations.append(dict(
+                    x=cx,
+                    y=cy,
+                    text=annotation_text,
+                    showarrow=True,
+                    arrowhead=2,
+                    arrowsize=1,
+                    arrowwidth=1,
+                    ax=30,
+                    ay=-30,
+                    font=dict(size=10, color='black'),
+                    bgcolor='rgba(255,255,255,0.8)',
+                    bordercolor='gray',
+                    borderwidth=1
+                ))
 
     fig.update_layout(
         title=dict(
             text=title,
             x=0.5,
             xanchor='center',
+            y=0.98,
+            yanchor='top',
             font=dict(size=16)
         ),
         xaxis=dict(
@@ -321,8 +620,17 @@ def generate_cluster_scatter(
             zerolinecolor='gray'
         ),
         hovermode='closest',
-        legend_title='Cluster',
-        height=550
+        legend=dict(
+            title='Cluster',
+            orientation='h',
+            yanchor='top',
+            y=1.15,
+            xanchor='center',
+            x=0.5
+        ),
+        height=CHART_HEIGHT_STANDARD,
+        margin=dict(t=120),  # More top margin for legend above title
+        annotations=annotations
     )
 
     return _fig_to_json(fig)
@@ -338,44 +646,61 @@ def _generate_single_heatmap(
     vmin: float,
     vmax: float,
     highlight_cells: Optional[List[tuple]] = None,
-    subtitle: str = ""
+    subtitle: str = "",
+    show_percentiles: bool = True
 ) -> go.Figure:
     """Generate a single heatmap figure (static, non-interactive style)."""
-    # Create heatmap - using a custom colorscale for better visibility
-    # RdYlGn with explicit color stops for better contrast
-    if not reverse_colorscale:
-        colorscale = [
-            [0.0, '#d73027'],    # Red (low/bad)
-            [0.25, '#fc8d59'],   # Orange
-            [0.5, '#fee08b'],    # Yellow (middle)
-            [0.75, '#d9ef8b'],   # Light green
-            [1.0, '#1a9850']     # Green (high/good)
-        ]
-    else:
-        colorscale = [
-            [0.0, '#1a9850'],    # Green (low/good for drawdown)
-            [0.25, '#d9ef8b'],   # Light green
-            [0.5, '#fee08b'],    # Yellow (middle)
-            [0.75, '#fc8d59'],   # Orange
-            [1.0, '#d73027']     # Red (high/bad for drawdown)
-        ]
+    # Use enhanced 9-stop colorscale for better contrast
+    colorscale = COLORSCALE_RDYLGN_R if reverse_colorscale else COLORSCALE_RDYLGN
 
     # Convert pivot data to lists for Plotly, replacing NaN with None
     z_array = pivot_data.values
     z_values = []
     text_values = []
-    for row in z_array:
+
+    # Flatten values for percentile/rank calculation
+    flat_values = z_array.flatten()
+    percentiles, ranks = _calculate_percentiles_and_ranks(flat_values)
+    percentiles_2d = percentiles.reshape(z_array.shape)
+    ranks_2d = ranks.reshape(z_array.shape)
+    total_valid = np.sum(np.isfinite(flat_values))
+
+    # Build custom hover text with percentile and rank info
+    hover_texts = []
+    for i, row in enumerate(z_array):
         z_row = []
         text_row = []
-        for val in row:
+        hover_row = []
+        for j, val in enumerate(row):
             if pd.isna(val) or not np.isfinite(val):
                 z_row.append(None)
                 text_row.append('')
+                hover_row.append('')
             else:
                 z_row.append(float(val))
                 text_row.append(f'{float(val):.2f}')
+
+                # Build enhanced hover text
+                x_val = pivot_data.columns[j]
+                y_val = pivot_data.index[i]
+                pct = percentiles_2d[i, j]
+                rank = int(ranks_2d[i, j]) if np.isfinite(ranks_2d[i, j]) else '-'
+
+                hover_parts = [
+                    f"<b>{x_param}</b>: {x_val}",
+                    f"<b>{y_param}</b>: {y_val}",
+                    f"<b>{metric_name}</b>: {val:.4f}",
+                ]
+                if show_percentiles:
+                    hover_parts.extend([
+                        f"<b>Percentile</b>: {pct:.1f}%",
+                        f"<b>Rank</b>: {rank}/{total_valid}"
+                    ])
+                hover_row.append('<br>'.join(hover_parts))
+
         z_values.append(z_row)
         text_values.append(text_row)
+        hover_texts.append(hover_row)
 
     x_labels = [str(x) for x in pivot_data.columns]
     y_labels = [str(y) for y in pivot_data.index]
@@ -400,7 +725,8 @@ def _generate_single_heatmap(
             len=0.9
         ),
         hoverongaps=False,
-        hovertemplate=f'{x_param}: %{{x}}<br>{y_param}: %{{y}}<br>{metric_name}: %{{z:.4f}}<extra></extra>',
+        customdata=hover_texts,
+        hovertemplate='%{customdata}<extra></extra>',
         xgap=1,  # Small gap between cells for better visibility
         ygap=1
     ))
@@ -727,24 +1053,37 @@ def generate_hdbscan_grid(
     n_cols = min(n, 2)
     n_rows = (n + n_cols - 1) // n_cols
 
-    subplot_titles = [
-        f'min_cluster_size={cfg[0]}, min_samples={cfg[1]}'
-        for cfg in configs
-    ]
+    # Build compact subplot titles with cluster count and noise ratio
+    subplot_titles = []
+    for i, cfg in enumerate(configs):
+        if i < len(cluster_dfs):
+            cdf = cluster_dfs[i]
+            num_clusters = len([c for c in cdf['cluster'].unique() if c != -1])
+            noise_count = len(cdf[cdf['cluster'] == -1])
+            total_count = len(cdf)
+            noise_ratio = noise_count / total_count * 100 if total_count > 0 else 0
+            # Single line compact title
+            subplot_titles.append(
+                f'size={cfg[0]}, samples={cfg[1]} | C:{num_clusters} N:{noise_ratio:.0f}%'
+            )
+        else:
+            subplot_titles.append(f'size={cfg[0]}, samples={cfg[1]}')
+
+    # Calculate safe vertical spacing - very minimal gap between rows
+    if n_rows > 1:
+        max_v_spacing = 1.0 / (n_rows - 1) - 0.01
+        # Minimal spacing for subplot titles only
+        v_spacing = min(0.05 if n_rows <= 2 else 0.04, max_v_spacing)
+    else:
+        v_spacing = 0.02
 
     fig = make_subplots(
         rows=n_rows,
         cols=n_cols,
         subplot_titles=subplot_titles,
-        horizontal_spacing=0.03,
-        vertical_spacing=0.06
+        horizontal_spacing=0.06,
+        vertical_spacing=v_spacing
     )
-
-    # Bright color palette for visibility
-    colors = [
-        '#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00',
-        '#ffff33', '#a65628', '#f781bf', '#999999', '#66c2a5'
-    ]
 
     for i, cdf in enumerate(cluster_dfs):
         row = i // n_cols + 1
@@ -762,8 +1101,8 @@ def generate_hdbscan_grid(
                 cluster_color = 'rgba(180, 180, 180, 0.5)'
                 name = 'Noise'
             else:
-                color_idx = int(cluster_label) % len(colors)
-                cluster_color = colors[color_idx]
+                color_idx = int(cluster_label) % len(CLUSTER_COLORS)
+                cluster_color = CLUSTER_COLORS[color_idx]
                 name = f'Cluster {cluster_label}'
 
             # Build hover text with strategy params and ranking metric
@@ -806,21 +1145,51 @@ def generate_hdbscan_grid(
                 col=col
             )
 
+    # Calculate height based on rows - maximize plot area
+    per_row_height = 280 if n_rows > 4 else 320
+    total_height = per_row_height * n_rows + 70  # Extra for title with spacing
+
     fig.update_layout(
-        height=350 * n_rows,
-        width=550 * n_cols,
-        title_text=title,
-        legend_title='Cluster',
+        height=total_height,
+        width=520 * n_cols + 100,  # Extra width for legend on right
+        title=dict(
+            text=title,
+            x=0.5,
+            xanchor='center',
+            y=0.995,
+            yanchor='top',
+            font=dict(size=14)
+        ),
+        legend=dict(
+            title='Cluster',
+            orientation='v',
+            yanchor='top',
+            y=0.99,
+            xanchor='left',
+            x=1.02
+        ),
         showlegend=True,
-        margin=dict(l=40, r=40, t=60, b=40)
+        margin=dict(l=45, r=100, t=60, b=25)
     )
 
-    # Update axis labels for all subplots
+    # Update axis labels for all subplots with tighter standoff
     for i in range(n):
         row = i // n_cols + 1
         col = i % n_cols + 1
-        fig.update_xaxes(title_text='PC1', row=row, col=col, gridcolor='lightgray')
-        fig.update_yaxes(title_text='PC2', row=row, col=col, gridcolor='lightgray')
+        fig.update_xaxes(
+            title_text='PC1',
+            title_standoff=2,
+            row=row,
+            col=col,
+            gridcolor='lightgray'
+        )
+        fig.update_yaxes(
+            title_text='PC2',
+            title_standoff=2,
+            row=row,
+            col=col,
+            gridcolor='lightgray'
+        )
 
     return _fig_to_json(fig)
 

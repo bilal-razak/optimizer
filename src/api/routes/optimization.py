@@ -94,26 +94,60 @@ def _format_size(size_bytes: int) -> str:
     return f"{size_bytes:.1f} TB"
 
 
-@router.get("/columns", response_model=Dict[str, List[str]])
-async def get_csv_columns(csv_path: str) -> Dict[str, List[str]]:
+@router.get("/columns", response_model=Dict[str, Any])
+async def get_csv_columns(csv_paths: str) -> Dict[str, Any]:
     """
-    Get column names from a CSV file for parameter mapping UI.
+    Get column names from one or more CSV files for parameter mapping UI.
+    Validates that all files have matching columns.
 
     Args:
-        csv_path: Path to the CSV file
+        csv_paths: Comma-separated paths to CSV files
 
     Returns:
-        Dictionary with 'columns' key containing list of column names
+        Dictionary with 'columns' key containing list of column names,
+        and 'valid' key indicating if all files have matching columns
     """
-    if not os.path.exists(csv_path):
-        raise HTTPException(
-            status_code=404,
-            detail=f"CSV file not found: {csv_path}"
-        )
+    # Split comma-separated paths
+    paths = [p.strip() for p in csv_paths.split(',')]
+
+    # Validate all files exist
+    for path in paths:
+        if not os.path.exists(path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"CSV file not found: {path}"
+            )
 
     try:
-        df = pd.read_csv(csv_path, nrows=0)
-        return {"columns": df.columns.tolist()}
+        reference_columns = None
+        reference_file = None
+
+        for path in paths:
+            df = pd.read_csv(path, nrows=0)
+            current_columns = set(df.columns.tolist())
+
+            if reference_columns is None:
+                reference_columns = current_columns
+                reference_file = os.path.basename(path)
+            else:
+                if current_columns != reference_columns:
+                    missing = reference_columns - current_columns
+                    extra = current_columns - reference_columns
+                    error_msg = f"Column mismatch between files. '{os.path.basename(path)}' differs from '{reference_file}'."
+                    if missing:
+                        error_msg += f" Missing: {list(missing)[:5]}{'...' if len(missing) > 5 else ''}."
+                    if extra:
+                        error_msg += f" Extra: {list(extra)[:5]}{'...' if len(extra) > 5 else ''}."
+                    raise HTTPException(
+                        status_code=400,
+                        detail=error_msg
+                    )
+
+        # Return columns from first file (all are validated to match)
+        df = pd.read_csv(paths[0], nrows=0)
+        return {"columns": df.columns.tolist(), "num_files": len(paths), "valid": True}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
