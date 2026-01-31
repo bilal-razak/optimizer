@@ -69,7 +69,11 @@ The dashboard will be available at `http://localhost:8000`
 ### Alternative: Run with Python
 
 ```bash
+# Local access only (127.0.0.1)
 .venv/bin/python -m uvicorn src.api.main:app --reload --host 127.0.0.1 --port 8000
+
+# Network access (0.0.0.0) - allows connections from other devices
+.venv/bin/python -m uvicorn src.api.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ### Workflow Steps

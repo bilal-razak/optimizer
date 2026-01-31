@@ -8,6 +8,9 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 
+from fastapi.responses import StreamingResponse
+import io
+
 from src.models.optimization import (
     ColumnInfo,
     HDBSCANConfigResult,
@@ -28,6 +31,8 @@ from src.models.optimization import (
     StepPCAResponse,
     StepShortlistRequest,
     StepShortlistResponse,
+    StepGenerateReportRequest,
+    StepGenerateReportResponse,
 )
 from src.optimization.clustering import (
     calculate_auto_k,
@@ -74,18 +79,50 @@ async def step_load_data(request: StepLoadDataRequest) -> StepLoadDataResponse:
     Step 1: Load CSV data and show DataFrame head + info.
 
     This is the starting point of the optimization workflow.
+    Supports loading multiple CSV files - they will be concatenated.
+    All CSVs must have the same columns.
     Returns a session_id to use in subsequent steps.
     """
-    # Validate CSV path
-    if not os.path.exists(request.csv_path):
-        raise HTTPException(
-            status_code=404,
-            detail=f"CSV file not found: {request.csv_path}"
-        )
+    # Validate all CSV paths exist
+    for csv_path in request.csv_paths:
+        if not os.path.exists(csv_path):
+            raise HTTPException(
+                status_code=404,
+                detail=f"CSV file not found: {csv_path}"
+            )
 
     try:
-        # Load and prepare data
-        raw_df = pd.read_csv(request.csv_path)
+        # Load all CSV files
+        dfs = []
+        reference_columns = None
+
+        for i, csv_path in enumerate(request.csv_paths):
+            df = pd.read_csv(csv_path)
+
+            # Validate columns match across all files
+            if reference_columns is None:
+                reference_columns = set(df.columns.tolist())
+            else:
+                current_columns = set(df.columns.tolist())
+                if current_columns != reference_columns:
+                    missing = reference_columns - current_columns
+                    extra = current_columns - reference_columns
+                    error_msg = f"Column mismatch in file: {os.path.basename(csv_path)}."
+                    if missing:
+                        error_msg += f" Missing columns: {list(missing)}."
+                    if extra:
+                        error_msg += f" Extra columns: {list(extra)}."
+                    raise HTTPException(
+                        status_code=400,
+                        detail=error_msg
+                    )
+
+            dfs.append(df)
+
+        # Concatenate all DataFrames
+        raw_df = pd.concat(dfs, ignore_index=True)
+
+        # Prepare data
         results_df = prepare_data(raw_df, request.strategy_params)
         results_df = results_df.sort_values(
             by=request.strategy_params,
@@ -125,7 +162,7 @@ async def step_load_data(request: StepLoadDataRequest) -> StepLoadDataResponse:
         # Create session
         session_id = str(uuid.uuid4())
         sessions[session_id] = {
-            "csv_path": request.csv_path,
+            "csv_paths": request.csv_paths,
             "strategy_params": request.strategy_params,
             "raw_df": raw_df,
             "results_df": results_df,
@@ -149,6 +186,7 @@ async def step_load_data(request: StepLoadDataRequest) -> StepLoadDataResponse:
 
         return StepLoadDataResponse(
             session_id=session_id,
+            num_files=len(request.csv_paths),
             num_rows=len(results_df),
             num_columns=len(raw_df.columns),
             columns=raw_df.columns.tolist(),
@@ -882,3 +920,357 @@ async def delete_session(session_id: str) -> Dict[str, str]:
 async def list_sessions() -> Dict[str, List[str]]:
     """List all active session IDs."""
     return {"sessions": list(sessions.keys())}
+
+
+@router.post("/generate-report")
+async def step_generate_report(request: StepGenerateReportRequest):
+    """
+    Step 8: Generate PDF report with all optimization results.
+
+    This endpoint re-runs the optimization pipeline with the provided configuration
+    and generates a comprehensive PDF report.
+    """
+    from src.optimization.report_generator import (
+        generate_report,
+        generate_cluster_isolated_scatter,
+    )
+    from pathlib import Path
+
+    session = get_session(request.session_id)
+
+    try:
+        # Get data from session
+        results_df = session.get("results_df")
+        if results_df is None:
+            raise HTTPException(status_code=400, detail="Session data not found. Please run Step 1 first.")
+
+        num_variants = len(results_df)
+
+        # Get shortlist data
+        shortlist_mask = session.get("shortlist_mask")
+        shortlisted_df = session.get("shortlisted_df", results_df)
+        num_shortlisted = len(shortlisted_df) if shortlisted_df is not None else num_variants
+
+        # Convert shortlist conditions to dict format
+        shortlist_conditions = [
+            {"metric": c.metric, "operator": c.operator, "value": c.value}
+            for c in request.shortlist_conditions
+        ]
+
+        # Get sharpe_ratio metric tuple
+        sharpe_metric = [m for m in HEATMAP_METRICS if m[0] == 'sharpe_ratio']
+
+        # Generate initial heatmaps (sharpe_ratio only)
+        df_for_heatmap = results_df.reset_index().copy()
+        initial_heatmaps = generate_heatmaps(
+            df=df_for_heatmap,
+            x_param=request.x_param,
+            y_param=request.y_param,
+            const_param1=request.const_param,
+            const_param2=None,
+            metrics=sharpe_metric
+        )
+
+        # Get shortlisted heatmaps if enabled
+        shortlisted_heatmaps = None
+        if request.shortlist_enabled and shortlist_mask is not None:
+            df_with_shortlist = df_for_heatmap.copy()
+            df_with_shortlist['_shortlisted'] = shortlist_mask.values.astype(int)
+            shortlisted_heatmaps = generate_heatmaps(
+                df=df_with_shortlist,
+                x_param=request.x_param,
+                y_param=request.y_param,
+                const_param1=request.const_param,
+                const_param2=None,
+                metrics=sharpe_metric,
+                highlight_col='_shortlisted',
+                highlight_val=1
+            )
+
+        # Get PCA data from session
+        explained_variance = session.get("explained_variance")
+        cumulative_variance = session.get("cumulative_variance")
+        if explained_variance is None:
+            raise HTTPException(status_code=400, detail="PCA data not found. Please run Step 3 first.")
+
+        pca_variance_chart = generate_pca_variance_chart(explained_variance, cumulative_variance)
+
+        # Get K-Means data from session
+        kmeans_df = session.get("kmeans_df")
+        kmeans_filtered_df = session.get("kmeans_filtered_df")
+        kmeans_all_stats = session.get("kmeans_all_stats", {})
+        kmeans_stats_sharpe = kmeans_all_stats.get("sharpe_ratio", [])
+        kmeans_stats_sortino = kmeans_all_stats.get("sortino_ratio", [])
+        kmeans_stats_profit = kmeans_all_stats.get("profit_factor", [])
+
+        if kmeans_df is None:
+            raise HTTPException(status_code=400, detail="K-Means data not found. Please run Step 4 first.")
+
+        # Regenerate K-Means scatter
+        strategy_params = session.get("strategy_params", request.strategy_params)
+        hover_cols = [c for c in strategy_params if c in kmeans_df.columns]
+        metrics_cols = ['sharpe_ratio', 'sortino_ratio', 'profit_factor']
+        metrics_cols = [c for c in metrics_cols if c in kmeans_df.columns]
+
+        k_used = request.kmeans_k if request.kmeans_k else len(kmeans_df['kmeans_cluster'].unique())
+        kmeans_scatter = generate_cluster_scatter(
+            kmeans_df,
+            'kmeans_cluster',
+            hover_cols,
+            f'K-Means Clustering (k={k_used})',
+            metrics_cols=metrics_cols
+        )
+
+        # Get HDBSCAN grid data from session
+        hdbscan_grid_dfs = session.get("hdbscan_grid_dfs", [])
+        hdbscan_grid_configs = session.get("hdbscan_grid_configs", [])
+
+        if not hdbscan_grid_dfs:
+            raise HTTPException(status_code=400, detail="HDBSCAN grid data not found. Please run Step 5 first.")
+
+        # Generate HDBSCAN grid charts - all points and core only
+        hdbscan_grid_chart_all = generate_hdbscan_grid(
+            cluster_dfs=hdbscan_grid_dfs,
+            configs=hdbscan_grid_configs,
+            strategy_params=strategy_params,
+            ranking_metric='sharpe_ratio',
+            title="HDBSCAN Clustering Grid - All Points"
+        )
+
+        # Generate core only DataFrames
+        hdbscan_grid_core_dfs = []
+        for cdf in hdbscan_grid_dfs:
+            if 'cluster_probability' in cdf.columns:
+                core_df = cdf[
+                    (cdf['cluster'] != -1) &
+                    (cdf['cluster_probability'] >= request.core_probability_threshold)
+                ].copy()
+            else:
+                core_df = cdf[cdf['cluster'] != -1].copy()
+            hdbscan_grid_core_dfs.append(core_df)
+
+        # Generate core only grid
+        from src.optimization.visualization import generate_hdbscan_core_grid
+        hdbscan_grid_chart_core = generate_hdbscan_core_grid(
+            cluster_core_dfs=hdbscan_grid_core_dfs,
+            configs=hdbscan_grid_configs,
+            strategy_params=strategy_params,
+            ranking_metric='sharpe_ratio',
+            title="HDBSCAN Clustering Grid - Core Points Only"
+        )
+
+        # Build config results for table
+        hdbscan_config_results = []
+        for idx, cdf in enumerate(hdbscan_grid_dfs):
+            cfg = hdbscan_grid_configs[idx]
+            num_clusters = len([c for c in cdf['cluster'].unique() if c != -1])
+            hdbscan_config_results.append({
+                'min_cluster_size': cfg[0],
+                'min_samples': cfg[1],
+                'num_clusters': num_clusters
+            })
+
+        # Get final HDBSCAN data from session
+        hdbscan_df = session.get("hdbscan_df")
+        if hdbscan_df is None:
+            raise HTTPException(status_code=400, detail="HDBSCAN final data not found. Please run Step 6 first.")
+
+        # Regenerate HDBSCAN scatters
+        hdbscan_scatter_all = generate_cluster_scatter(
+            hdbscan_df,
+            'cluster',
+            hover_cols,
+            f'HDBSCAN (min_size={request.hdbscan_min_cluster_size}, min_samples={request.hdbscan_min_samples})',
+            metrics_cols=metrics_cols
+        )
+
+        core_df = hdbscan_df[
+            (hdbscan_df['cluster'] != -1) &
+            (hdbscan_df['cluster_probability'] >= request.core_probability_threshold)
+        ]
+        hdbscan_scatter_core = generate_cluster_scatter(
+            core_df,
+            'cluster',
+            hover_cols,
+            f'HDBSCAN Core Points (prob >= {request.core_probability_threshold})',
+            metrics_cols=metrics_cols
+        )
+
+        # HDBSCAN stats
+        hdbscan_num_clusters = len([c for c in hdbscan_df['cluster'].unique() if c != -1])
+        hdbscan_num_core_points = len(core_df)
+
+        # Get stats for all three metrics
+        hdbscan_stats_sharpe = []
+        hdbscan_stats_sortino = []
+        hdbscan_stats_profit = []
+
+        if 'sharpe_ratio' in hdbscan_df.columns:
+            hdbscan_stats_df = compute_cluster_stats(
+                hdbscan_df,
+                'sharpe_ratio',
+                cluster_col='cluster',
+                threshold_prob=request.core_probability_threshold
+            )
+            hdbscan_stats_sharpe = hdbscan_stats_df.to_dict('records')
+
+        if 'sortino_ratio' in hdbscan_df.columns:
+            sortino_stats_df = compute_cluster_stats(
+                hdbscan_df,
+                'sortino_ratio',
+                cluster_col='cluster',
+                threshold_prob=request.core_probability_threshold
+            )
+            hdbscan_stats_sortino = sortino_stats_df.to_dict('records')
+
+        if 'profit_factor' in hdbscan_df.columns:
+            pf_stats_df = compute_cluster_stats(
+                hdbscan_df,
+                'profit_factor',
+                cluster_col='cluster',
+                threshold_prob=request.core_probability_threshold
+            )
+            hdbscan_stats_profit = pf_stats_df.to_dict('records')
+
+        # Get best clusters data from session
+        best_cluster_ids = session.get("best_cluster_ids", [])
+        if not best_cluster_ids:
+            raise HTTPException(status_code=400, detail="Best clusters data not found. Please run Step 7 first.")
+
+        # Get heatmap params
+        hp = session.get("heatmap_params", {
+            "x_param": request.x_param,
+            "y_param": request.y_param,
+            "const_param1": request.const_param
+        })
+
+        # Generate best cluster heatmaps and scatter plots
+        best_cluster_heatmaps = []
+        best_cluster_scatter_plots = []
+        best_cluster_data = []
+        best_cluster_core_counts = []
+
+        full_results = results_df.reset_index().copy()
+        full_results['cluster'] = -2
+        for idx in hdbscan_df.index:
+            mask = full_results['variant_id'] == idx
+            if mask.any():
+                full_results.loc[mask, 'cluster'] = hdbscan_df.loc[idx, 'cluster']
+
+        for cluster_id in best_cluster_ids:
+            cluster_variants = hdbscan_df[hdbscan_df['cluster'] == cluster_id].index.tolist()
+            core_mask = (
+                (hdbscan_df['cluster'] == cluster_id) &
+                (hdbscan_df['cluster_probability'] >= request.core_probability_threshold)
+            )
+            core_count = int(core_mask.sum())
+            best_cluster_core_counts.append(core_count)
+
+            # Get const values in cluster
+            const_param = hp.get("const_param1") or request.const_param
+            const_vals = []
+            if const_param and const_param in full_results.columns:
+                cluster_mask = full_results['variant_id'].isin(cluster_variants)
+                const_vals = sorted(full_results.loc[cluster_mask, const_param].unique().tolist())
+
+            # Filter for heatmap
+            if const_param and const_vals:
+                df_for_hm = full_results[full_results[const_param].isin(const_vals)].copy()
+            else:
+                df_for_hm = full_results.copy()
+
+            # Generate highlighted heatmaps
+            cluster_heatmaps = generate_heatmaps(
+                df=df_for_hm,
+                x_param=hp.get("x_param", request.x_param),
+                y_param=hp.get("y_param", request.y_param),
+                const_param1=const_param,
+                const_param2=None,
+                metrics=sharpe_metric,
+                highlight_col='cluster',
+                highlight_val=cluster_id
+            )
+            best_cluster_heatmaps.append(cluster_heatmaps)
+
+            # Generate isolated scatter plot
+            scatter = generate_cluster_isolated_scatter(
+                hdbscan_df,
+                cluster_id,
+                strategy_params
+            )
+            best_cluster_scatter_plots.append(scatter)
+
+            # Get cluster data
+            cluster_data = hdbscan_df[hdbscan_df['cluster'] == cluster_id].copy()
+            cluster_data = cluster_data.reset_index()
+            cluster_data = cluster_data.sort_values(by=strategy_params, ascending=True)
+            best_cluster_data.append(cluster_data.to_dict('records'))
+
+        # Generate the report
+        pdf_bytes, filename = generate_report(
+            report_title=request.report_title,
+            csv_path=request.csv_path,
+            strategy_params=strategy_params,
+            x_param=request.x_param,
+            y_param=request.y_param,
+            const_param=request.const_param,
+            shortlist_enabled=request.shortlist_enabled,
+            shortlist_conditions=shortlist_conditions,
+            kmeans_k=k_used,
+            hdbscan_min_cluster_size=request.hdbscan_min_cluster_size,
+            hdbscan_min_samples=request.hdbscan_min_samples,
+            core_probability_threshold=request.core_probability_threshold,
+            num_variants=num_variants,
+            num_shortlisted=num_shortlisted,
+            initial_heatmaps=initial_heatmaps,
+            shortlisted_heatmaps=shortlisted_heatmaps,
+            pca_variance_chart=pca_variance_chart,
+            explained_variance=list(explained_variance),
+            cumulative_variance=list(cumulative_variance),
+            kmeans_scatter=kmeans_scatter,
+            kmeans_stats_sharpe=kmeans_stats_sharpe,
+            kmeans_stats_sortino=kmeans_stats_sortino,
+            kmeans_stats_profit=kmeans_stats_profit,
+            kmeans_best_cluster_size=len(kmeans_filtered_df) if kmeans_filtered_df is not None else 0,
+            hdbscan_grid_chart_all=hdbscan_grid_chart_all,
+            hdbscan_grid_chart_core=hdbscan_grid_chart_core,
+            hdbscan_config_results=hdbscan_config_results,
+            hdbscan_scatter_all=hdbscan_scatter_all,
+            hdbscan_scatter_core=hdbscan_scatter_core,
+            hdbscan_stats_sharpe=hdbscan_stats_sharpe,
+            hdbscan_stats_sortino=hdbscan_stats_sortino,
+            hdbscan_stats_profit=hdbscan_stats_profit,
+            hdbscan_num_clusters=hdbscan_num_clusters,
+            hdbscan_num_core_points=hdbscan_num_core_points,
+            best_cluster_ids=best_cluster_ids,
+            best_cluster_heatmaps=best_cluster_heatmaps,
+            best_cluster_scatter_plots=best_cluster_scatter_plots,
+            best_cluster_data=best_cluster_data,
+            best_cluster_core_counts=best_cluster_core_counts,
+            save_path=request.save_path,
+            filename=request.report_filename
+        )
+
+        # Return success response with saved path
+        save_path = Path(request.save_path)
+        if save_path.is_dir():
+            actual_path = str(save_path / filename)
+        else:
+            actual_path = str(save_path)
+
+        return StepGenerateReportResponse(
+            session_id=request.session_id,
+            report_generated=True,
+            report_path=actual_path,
+            download_available=False,
+            report_filename=filename,
+            message=f"Report saved successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error generating report: {str(e)}"
+        )

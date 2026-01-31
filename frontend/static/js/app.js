@@ -9,10 +9,12 @@ const API_BASE = '';
 const state = {
     sessionId: null,
     currentStep: 1,
+    maxCompletedStep: 0,  // Track highest completed step for navigation
     columns: [],
     strategyParams: [],
     availableMetrics: [],
     shortlistApplied: false,
+    shortlistConditions: [],    // Store shortlist conditions for report
     heatmaps: [],           // All generated heatmaps
     filteredHeatmaps: [],   // Filtered heatmaps based on navigation
     heatmapIndex: 0,
@@ -26,12 +28,27 @@ const state = {
     isDarkTheme: false,
     browser: {
         currentPath: '',
-        selectedFile: null
-    }
+        selectedFile: null,
+        selectedFiles: []  // Support multiple file selection
+    },
+    csvPaths: [],  // Store multiple CSV paths
+    // Step 8: Report generation state
+    csvPath: '',
+    numVariants: 0,
+    heatmapXParam: null,
+    heatmapYParam: null,
+    kmeansK: null,
+    hdbscanMinSize: 5,
+    hdbscanMinSamples: 3,
+    coreThreshold: 0.95,
+    numBestClusters: 2
 };
 
 // DOM Elements
 const elements = {};
+
+// Flag for directory browse mode (for report save path)
+let reportBrowseMode = false;
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -113,7 +130,36 @@ function cacheElements() {
     elements.numBestClusters = document.getElementById('num-best-clusters');
     elements.runStep7Btn = document.getElementById('run-step7-btn');
     elements.step7Results = document.getElementById('step7-results');
+    elements.approveStep7Btn = document.getElementById('approve-step7-btn');
     elements.restartBtn = document.getElementById('restart-btn');
+
+    // Step 8 elements
+    elements.reportTitle = document.getElementById('report-title');
+    elements.reportCsvPath = document.getElementById('report-csv-path');
+    elements.reportStrategyParams = document.getElementById('report-strategy-params');
+    elements.reportNumVariants = document.getElementById('report-num-variants');
+    elements.reportXParam = document.getElementById('report-x-param');
+    elements.reportYParam = document.getElementById('report-y-param');
+    elements.reportConstParam = document.getElementById('report-const-param');
+    elements.reportShortlistEnabled = document.getElementById('report-shortlist-enabled');
+    elements.reportShortlistConditions = document.getElementById('report-shortlist-conditions');
+    elements.reportKmeansK = document.getElementById('report-kmeans-k');
+    elements.reportHdbscanMinSize = document.getElementById('report-hdbscan-min-size');
+    elements.reportHdbscanMinSamples = document.getElementById('report-hdbscan-min-samples');
+    elements.reportCoreThreshold = document.getElementById('report-core-threshold');
+    elements.reportNumClusters = document.getElementById('report-num-clusters');
+    elements.reportFilename = document.getElementById('report-filename');
+    elements.reportSavePath = document.getElementById('report-save-path');
+    elements.reportBrowseBtn = document.getElementById('report-browse-btn');
+    elements.generateReportBtn = document.getElementById('generate-report-btn');
+    elements.step8Results = document.getElementById('step8-results');
+
+    // Popup modal elements
+    elements.reportPopupModal = document.getElementById('report-popup-modal');
+    elements.popupTitle = document.getElementById('popup-title');
+    elements.popupMessage = document.getElementById('popup-message');
+    elements.popupPath = document.getElementById('popup-path');
+    elements.closePopupBtn = document.getElementById('close-popup-btn');
 
     // Loading & Modal
     elements.loading = document.getElementById('loading');
@@ -145,6 +191,24 @@ function setupEventListeners() {
         });
     });
 
+    // Forward buttons
+    document.querySelectorAll('.btn-forward').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const forwardStep = parseInt(this.dataset.forward);
+            if (forwardStep <= state.maxCompletedStep + 1) {
+                showStep(forwardStep);
+            }
+        });
+    });
+
+    // Step icon clicks for direct navigation
+    elements.stepItems.forEach(item => {
+        item.addEventListener('click', function() {
+            const step = parseInt(this.dataset.step);
+            navigateToStep(step);
+        });
+    });
+
     // File browser
     elements.browseBtn.addEventListener('click', openFileBrowser);
     elements.closeModalBtn.addEventListener('click', closeFileBrowser);
@@ -162,7 +226,7 @@ function setupEventListeners() {
         elements.columnSearch.addEventListener('input', filterColumns);
     }
     elements.runStep1Btn.addEventListener('click', runStep1);
-    elements.approveStep1Btn.addEventListener('click', () => showStep(2));
+    elements.approveStep1Btn.addEventListener('click', () => showStep(2, true));
 
     // Table filtering
     if (elements.tableFilter) {
@@ -184,7 +248,7 @@ function setupEventListeners() {
     });
     elements.applyShortlistBtn.addEventListener('click', applyShortlist);
     elements.generateHeatmapBtn.addEventListener('click', generateHeatmaps);
-    elements.approveStep2Btn.addEventListener('click', () => showStep(3));
+    elements.approveStep2Btn.addEventListener('click', () => showStep(3, true));
 
     // Heatmap navigation
     document.getElementById('prev-heatmap').addEventListener('click', () => navigateHeatmap(-1));
@@ -205,15 +269,43 @@ function setupEventListeners() {
 
     // Steps 3-7
     elements.runStep3Btn.addEventListener('click', runStep3);
-    elements.approveStep3Btn.addEventListener('click', () => showStep(4));
+    elements.approveStep3Btn.addEventListener('click', () => showStep(4, true));
     elements.runStep4Btn.addEventListener('click', runStep4);
-    elements.approveStep4Btn.addEventListener('click', () => showStep(5));
+    elements.approveStep4Btn.addEventListener('click', () => showStep(5, true));
     elements.runStep5Btn.addEventListener('click', runStep5);
-    elements.approveStep5Btn.addEventListener('click', () => showStep(6));
+    elements.approveStep5Btn.addEventListener('click', () => showStep(6, true));
     elements.runStep6Btn.addEventListener('click', runStep6);
-    elements.approveStep6Btn.addEventListener('click', () => showStep(7));
+    elements.approveStep6Btn.addEventListener('click', () => showStep(7, true));
     elements.runStep7Btn.addEventListener('click', runStep7);
+    elements.approveStep7Btn.addEventListener('click', () => {
+        populateReportForm();
+        showStep(8, true);
+    });
     elements.restartBtn.addEventListener('click', restart);
+
+    // Step 8 events
+    elements.generateReportBtn.addEventListener('click', generateReport);
+
+    // Browse for save directory
+    if (elements.reportBrowseBtn) {
+        elements.reportBrowseBtn.addEventListener('click', openReportDirectoryBrowser);
+    }
+
+    // Close popup modal
+    if (elements.closePopupBtn) {
+        elements.closePopupBtn.addEventListener('click', closeReportPopup);
+    }
+    if (elements.reportPopupModal) {
+        elements.reportPopupModal.addEventListener('click', (e) => {
+            if (e.target === elements.reportPopupModal) closeReportPopup();
+        });
+    }
+
+    // Add condition button for report shortlist
+    const reportAddConditionBtn = document.getElementById('report-add-condition-btn');
+    if (reportAddConditionBtn) {
+        reportAddConditionBtn.addEventListener('click', () => addReportShortlistCondition());
+    }
 
     // Tab switching
     document.querySelectorAll('.tab').forEach(tab => {
@@ -275,9 +367,62 @@ function updateThemeButton() {
 
 function reRenderCharts() {
     // Re-render any visible heatmaps
-    if (state.heatmaps.length > 0) {
-        renderHeatmap(state.heatmaps[state.heatmapIndex]);
+    if (state.filteredHeatmaps && state.filteredHeatmaps.length > 0) {
+        renderHeatmap(state.filteredHeatmaps[state.heatmapIndex]);
     }
+
+    // Re-render PCA charts if visible
+    const pcaVarianceContainer = document.getElementById('pca-variance-chart');
+    const pcaScatterContainer = document.getElementById('pca-scatter-chart');
+    if (pcaVarianceContainer && pcaVarianceContainer.data) {
+        Plotly.relayout(pcaVarianceContainer, getChartLayoutUpdate());
+    }
+    if (pcaScatterContainer && pcaScatterContainer.data) {
+        Plotly.relayout(pcaScatterContainer, getChartLayoutUpdate());
+    }
+
+    // Re-render K-Means scatter if visible
+    const kmeansScatterContainer = document.getElementById('kmeans-scatter-chart');
+    if (kmeansScatterContainer && kmeansScatterContainer.data) {
+        Plotly.relayout(kmeansScatterContainer, getChartLayoutUpdate());
+    }
+
+    // Re-render HDBSCAN charts if visible
+    const hdbscanGridContainer = document.getElementById('hdbscan-grid-chart');
+    const hdbscanCoreGridContainer = document.getElementById('hdbscan-core-grid-chart');
+    const hdbscanFinalContainer = document.getElementById('hdbscan-final-scatter-chart');
+    if (hdbscanGridContainer && hdbscanGridContainer.data) {
+        Plotly.relayout(hdbscanGridContainer, getChartLayoutUpdate());
+    }
+    if (hdbscanCoreGridContainer && hdbscanCoreGridContainer.data) {
+        Plotly.relayout(hdbscanCoreGridContainer, getChartLayoutUpdate());
+    }
+    if (hdbscanFinalContainer && hdbscanFinalContainer.data) {
+        Plotly.relayout(hdbscanFinalContainer, getChartLayoutUpdate());
+    }
+
+    // Re-render cluster heatmaps
+    document.querySelectorAll('.cluster-heatmap').forEach(container => {
+        if (container.data) {
+            Plotly.relayout(container, getChartLayoutUpdate());
+        }
+    });
+}
+
+function getChartLayoutUpdate() {
+    const colors = getChartColors();
+    return {
+        paper_bgcolor: colors.paper_bgcolor,
+        plot_bgcolor: colors.plot_bgcolor,
+        font: { color: colors.fontcolor },
+        'xaxis.gridcolor': colors.gridcolor,
+        'yaxis.gridcolor': colors.gridcolor,
+        'xaxis.tickfont.color': colors.fontcolor,
+        'yaxis.tickfont.color': colors.fontcolor,
+        'xaxis.titlefont.color': colors.fontcolor,
+        'yaxis.titlefont.color': colors.fontcolor,
+        'legend.font.color': colors.fontcolor
+    };
 }
 
 function getChartColors() {
@@ -300,17 +445,57 @@ function getChartColors() {
 
 // ==================== Step Navigation ====================
 
-function showStep(stepNum) {
+function showStep(stepNum, markAsCompleted = false) {
     state.currentStep = stepNum;
+
+    // If navigating forward from approve button, mark current step as completed
+    if (markAsCompleted && stepNum > 1) {
+        state.maxCompletedStep = Math.max(state.maxCompletedStep, stepNum - 1);
+    }
+
     elements.stepPanels.forEach(p => p.classList.remove('active'));
     document.getElementById(`step-${stepNum}-panel`).classList.add('active');
+
     elements.stepItems.forEach(item => {
         const step = parseInt(item.dataset.step);
-        item.classList.remove('active', 'completed');
-        if (step < stepNum) item.classList.add('completed');
-        else if (step === stepNum) item.classList.add('active');
+        item.classList.remove('active', 'completed', 'clickable');
+
+        if (step < stepNum) {
+            item.classList.add('completed');
+        } else if (step === stepNum) {
+            item.classList.add('active');
+        }
+
+        // Mark as clickable if step is accessible (completed or current)
+        if (step <= state.maxCompletedStep + 1 && step !== stepNum) {
+            item.classList.add('clickable');
+        }
     });
+
+    // Update forward/back button visibility
+    updateNavigationButtons();
+
     window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function updateNavigationButtons() {
+    // Update forward buttons visibility
+    document.querySelectorAll('.btn-forward').forEach(btn => {
+        const forwardStep = parseInt(btn.dataset.forward);
+        // Show forward button only if the next step has been completed
+        if (forwardStep <= state.maxCompletedStep + 1 && forwardStep > state.currentStep) {
+            btn.style.display = 'inline-flex';
+        } else {
+            btn.style.display = 'none';
+        }
+    });
+}
+
+function navigateToStep(stepNum) {
+    // Only allow navigation to completed steps or current step
+    if (stepNum <= state.maxCompletedStep + 1) {
+        showStep(stepNum);
+    }
 }
 
 function restart() {
@@ -322,6 +507,9 @@ function restart() {
     state.heatmaps = [];
     state.heatmapIndex = 0;
     state.strategyParams = [];
+    state.csvPaths = [];
+    state.browser.selectedFiles = [];
+    state.maxCompletedStep = 0;  // Reset navigation state
     document.querySelectorAll('.step-results').forEach(el => el.style.display = 'none');
     showStep(1);
 }
@@ -331,13 +519,27 @@ function restart() {
 function openFileBrowser() {
     elements.modal.classList.add('show');
     state.browser.selectedFile = null;
+    state.browser.selectedFiles = [];  // Reset multiple selection
     elements.selectedFileContainer.style.display = 'none';
     elements.confirmBrowseBtn.disabled = true;
+
+    // Update modal title based on mode
+    const modalTitle = elements.modal.querySelector('.modal-header h3');
+    const confirmBtn = elements.confirmBrowseBtn;
+    if (reportBrowseMode) {
+        modalTitle.textContent = 'Select Directory';
+        confirmBtn.textContent = 'Select Directory';
+    } else {
+        modalTitle.textContent = 'Select CSV Files (click multiple to select)';
+        confirmBtn.textContent = 'Confirm Selection';
+    }
+
     browseDirectory('');
 }
 
 function closeFileBrowser() {
     elements.modal.classList.remove('show');
+    reportBrowseMode = false;
 }
 
 async function browseDirectory(path) {
@@ -352,6 +554,13 @@ async function browseDirectory(path) {
         state.browser.parentPath = data.parent_path;
         elements.currentPathInput.value = data.current_path;
         renderFileList(data.directories, data.files);
+
+        // In directory browse mode, enable confirm button for selecting current directory
+        if (reportBrowseMode) {
+            elements.confirmBrowseBtn.disabled = false;
+            elements.selectedFileContainer.style.display = 'flex';
+            elements.selectedFileName.textContent = 'Current Directory: ' + data.current_path;
+        }
     } catch (error) {
         elements.fileList.innerHTML = `<li class="error-message">Error: ${error.message}</li>`;
     } finally {
@@ -381,12 +590,35 @@ function renderFileList(directories, files) {
 }
 
 function selectFile(file, element) {
-    document.querySelectorAll('.file-item.selected').forEach(el => el.classList.remove('selected'));
-    element.classList.add('selected');
-    state.browser.selectedFile = file;
-    elements.selectedFileContainer.style.display = 'flex';
-    elements.selectedFileName.textContent = file.name;
-    elements.confirmBrowseBtn.disabled = false;
+    // Toggle selection for multi-select support
+    const index = state.browser.selectedFiles.findIndex(f => f.path === file.path);
+
+    if (index > -1) {
+        // Deselect
+        state.browser.selectedFiles.splice(index, 1);
+        element.classList.remove('selected');
+    } else {
+        // Select
+        state.browser.selectedFiles.push(file);
+        element.classList.add('selected');
+    }
+
+    // Update UI
+    if (state.browser.selectedFiles.length > 0) {
+        elements.selectedFileContainer.style.display = 'flex';
+        if (state.browser.selectedFiles.length === 1) {
+            elements.selectedFileName.textContent = state.browser.selectedFiles[0].name;
+        } else {
+            elements.selectedFileName.textContent = `${state.browser.selectedFiles.length} files selected`;
+        }
+        elements.confirmBrowseBtn.disabled = false;
+    } else {
+        elements.selectedFileContainer.style.display = 'none';
+        elements.confirmBrowseBtn.disabled = true;
+    }
+
+    // Keep backward compatibility
+    state.browser.selectedFile = state.browser.selectedFiles.length > 0 ? state.browser.selectedFiles[0] : null;
 }
 
 function goToParentDirectory() {
@@ -394,8 +626,19 @@ function goToParentDirectory() {
 }
 
 function confirmFileSelection() {
-    if (state.browser.selectedFile) {
-        elements.csvPath.value = state.browser.selectedFile.path;
+    if (reportBrowseMode) {
+        // For report directory selection, use current path (directory)
+        elements.reportSavePath.value = state.browser.currentPath;
+        reportBrowseMode = false;
+        closeFileBrowser();
+    } else if (state.browser.selectedFiles.length > 0) {
+        // For CSV file selection - support multiple files
+        state.csvPaths = state.browser.selectedFiles.map(f => f.path);
+        if (state.csvPaths.length === 1) {
+            elements.csvPath.value = state.csvPaths[0];
+        } else {
+            elements.csvPath.value = `${state.csvPaths.length} files selected`;
+        }
         elements.loadColumnsBtn.disabled = false;
         closeFileBrowser();
     }
@@ -426,17 +669,28 @@ async function apiCall(endpoint, method = 'GET', data = null) {
 // ==================== Step 1: Load Data ====================
 
 async function loadColumns() {
-    const csvPath = elements.csvPath.value.trim();
-    if (!csvPath) return alert('Please select a CSV file first');
+    // Use csvPaths array or fall back to single path from input
+    if (state.csvPaths.length === 0) {
+        const csvPath = elements.csvPath.value.trim();
+        if (!csvPath) return alert('Please select a CSV file first');
+        state.csvPaths = [csvPath];
+    }
 
     try {
         elements.loadColumnsBtn.disabled = true;
         elements.loadColumnsBtn.textContent = 'Loading...';
-        const data = await apiCall(`/optimization/columns?csv_path=${encodeURIComponent(csvPath)}`);
+        // Pass comma-separated paths for validation
+        const pathsParam = state.csvPaths.map(p => encodeURIComponent(p)).join(',');
+        const data = await apiCall(`/optimization/columns?csv_paths=${pathsParam}`);
         state.columns = data.columns;
         populateColumnSelectors();
         elements.columnSelectionSection.style.display = 'block';
         elements.runStep1Btn.disabled = true;
+
+        // Show file count in UI if multiple files
+        if (data.num_files > 1) {
+            elements.csvPath.value = `${data.num_files} files selected (columns validated)`;
+        }
     } catch (error) {
         alert(`Error: ${error.message}`);
     } finally {
@@ -540,7 +794,7 @@ async function runStep1() {
     try {
         showLoading('Loading data...');
         const request = {
-            csv_path: elements.csvPath.value.trim(),
+            csv_paths: state.csvPaths.length > 0 ? state.csvPaths : [elements.csvPath.value.trim()],
             strategy_params: state.strategyParams
         };
 
@@ -548,8 +802,19 @@ async function runStep1() {
         state.sessionId = result.session_id;
         state.availableMetrics = result.available_metrics;
 
+        // Store data for report generation
+        state.csvPath = state.csvPaths.length > 0 ? state.csvPaths[0] : elements.csvPath.value.trim();
+        state.numVariants = result.num_rows;
+        state.numFiles = result.num_files;
+
         // Display results
-        document.getElementById('step1-num-rows').textContent = result.num_rows;
+        if (result.num_files > 1) {
+            document.getElementById('step1-files-card').style.display = 'block';
+            document.getElementById('step1-num-files').textContent = result.num_files;
+        } else {
+            document.getElementById('step1-files-card').style.display = 'none';
+        }
+        document.getElementById('step1-num-rows').textContent = result.num_rows.toLocaleString();
         document.getElementById('step1-num-cols').textContent = result.num_columns;
         document.getElementById('step1-strategy-params').textContent = result.strategy_params.length;
 
@@ -797,6 +1062,9 @@ async function applyShortlist() {
         const result = await apiCall('/steps/shortlist', 'POST', request);
         state.shortlistApplied = result.shortlist_applied;
 
+        // Store conditions for report generation
+        state.shortlistConditions = conditions;
+
         if (result.shortlist_applied) {
             elements.shortlistStatus.textContent = `Shortlist applied: ${result.num_variants_after_shortlist} variants match`;
             elements.shortlistStatus.style.display = 'block';
@@ -815,6 +1083,10 @@ async function generateHeatmaps() {
 
         const constParam = elements.heatmapConstParam.value || null;
         state.heatmapConstParam = constParam;
+
+        // Store heatmap params for report generation
+        state.heatmapXParam = elements.heatmapXParam.value;
+        state.heatmapYParam = elements.heatmapYParam.value;
 
         const request = {
             session_id: state.sessionId,
@@ -1034,7 +1306,20 @@ function renderHeatmap(chartData) {
     }
 
     const colors = getChartColors();
-    const config = { responsive: true, staticPlot: false, displayModeBar: true };
+    const config = {
+        responsive: true,
+        staticPlot: false,
+        displayModeBar: true,
+        modeBarButtonsToAdd: ['downloadImage'],
+        toImageButtonOptions: {
+            format: 'png',
+            filename: 'heatmap_export',
+            height: 800,
+            width: 1200,
+            scale: 2
+        },
+        displaylogo: false
+    };
     const originalLayout = chartData.layout || {};
 
     // Get container width for responsive sizing - use full width with minimal padding
@@ -1103,7 +1388,12 @@ function renderHeatmap(chartData) {
         }));
     }
 
-    Plotly.newPlot(container, data, layout, config);
+    Plotly.newPlot(container, data, layout, config).then(() => {
+        // Force resize after render to ensure full width
+        setTimeout(() => {
+            Plotly.Plots.resize(container);
+        }, 100);
+    });
 }
 
 function navigateHeatmap(direction) {
@@ -1130,7 +1420,20 @@ function renderChart(container, chartData, fullWidth = false) {
 
     const colors = getChartColors();
     const isHeatmap = chartData.data.some(t => t.type === 'heatmap');
-    const config = { responsive: true, displayModeBar: !isHeatmap, staticPlot: false };
+    const config = {
+        responsive: true,
+        displayModeBar: true,
+        staticPlot: false,
+        toImageButtonOptions: {
+            format: 'png',
+            filename: 'chart_export',
+            height: 600,
+            width: 1000,
+            scale: 2
+        },
+        displaylogo: false,
+        modeBarButtonsToRemove: isHeatmap ? [] : ['lasso2d', 'select2d']
+    };
     const originalLayout = chartData.layout || {};
 
     // Get container width for responsive sizing - try multiple sources
@@ -1190,7 +1493,12 @@ function renderChart(container, chartData, fullWidth = false) {
         }));
     }
 
-    Plotly.newPlot(container, data, layout, config);
+    Plotly.newPlot(container, data, layout, config).then(() => {
+        // Force resize after render to ensure full width
+        setTimeout(() => {
+            Plotly.Plots.resize(container);
+        }, 100);
+    });
 }
 
 async function runStep3() {
@@ -1212,6 +1520,9 @@ async function runStep4() {
         showLoading('Running K-Means...');
         const kValue = elements.kmeansK.value ? parseInt(elements.kmeansK.value) : null;
         const result = await apiCall('/steps/kmeans', 'POST', { session_id: state.sessionId, k: kValue });
+
+        // Store K-Means K value for report generation
+        state.kmeansK = result.k_used;
 
         document.getElementById('step4-k-used').textContent = result.k_used;
         document.getElementById('step4-filtered-count').textContent = result.num_variants_in_best_kmeans;
@@ -1284,10 +1595,17 @@ async function runStep5() {
 async function runStep6() {
     try {
         showLoading('Running final HDBSCAN...');
+        const minClusterSize = parseInt(elements.finalMinClusterSize.value);
+        const minSamples = parseInt(elements.finalMinSamples.value);
+
+        // Store HDBSCAN params for report generation
+        state.hdbscanMinSize = minClusterSize;
+        state.hdbscanMinSamples = minSamples;
+
         const request = {
             session_id: state.sessionId,
-            min_cluster_size: parseInt(elements.finalMinClusterSize.value),
-            min_samples: parseInt(elements.finalMinSamples.value),
+            min_cluster_size: minClusterSize,
+            min_samples: minSamples,
             ranking_metric: elements.rankingMetric.value
         };
 
@@ -1349,9 +1667,14 @@ function setupHDBSCANViewToggle() {
 async function runStep7() {
     try {
         showLoading('Getting best clusters...');
+        const numBestClusters = parseInt(elements.numBestClusters.value);
+
+        // Store for report generation
+        state.numBestClusters = numBestClusters;
+
         const request = {
             session_id: state.sessionId,
-            num_best_clusters: parseInt(elements.numBestClusters.value),
+            num_best_clusters: numBestClusters,
             ranking_metric: elements.rankingMetric.value
         };
 
@@ -1662,3 +1985,283 @@ function renderBestClusters(result) {
         });
     });
 }
+
+// ==================== Step 8: Report Generation ====================
+
+function populateReportForm() {
+    // Populate report form with data from previous steps (editable fields)
+    elements.reportTitle.value = 'Optimization Report';
+
+    // CSV Path (readonly)
+    elements.reportCsvPath.value = state.csvPath || '';
+
+    // Strategy params (display only)
+    if (state.strategyParams && state.strategyParams.length > 0) {
+        elements.reportStrategyParams.innerHTML = state.strategyParams
+            .map(p => `<span class="param-tag">${p}</span>`)
+            .join('');
+    } else {
+        elements.reportStrategyParams.innerHTML = '<span>-</span>';
+    }
+
+    // Total variants (display only)
+    elements.reportNumVariants.textContent = state.numVariants || '-';
+
+    // Populate heatmap parameter dropdowns
+    populateReportParamSelectors();
+
+    // Set selected values for heatmap params
+    if (state.heatmapXParam) {
+        elements.reportXParam.value = state.heatmapXParam;
+    }
+    if (state.heatmapYParam) {
+        elements.reportYParam.value = state.heatmapYParam;
+    }
+    if (state.heatmapConstParam) {
+        elements.reportConstParam.value = state.heatmapConstParam;
+    } else {
+        elements.reportConstParam.value = '';
+    }
+
+    // Shortlist checkbox
+    elements.reportShortlistEnabled.checked = state.shortlistApplied;
+
+    // Populate shortlist conditions
+    elements.reportShortlistConditions.innerHTML = '';
+    if (state.shortlistConditions && state.shortlistConditions.length > 0) {
+        state.shortlistConditions.forEach(c => {
+            addReportShortlistCondition(c.metric, c.operator, c.value);
+        });
+    }
+
+    // K-Means K value (editable)
+    elements.reportKmeansK.value = state.kmeansK || '';
+
+    // HDBSCAN params (editable)
+    elements.reportHdbscanMinSize.value = state.hdbscanMinSize || 5;
+    elements.reportHdbscanMinSamples.value = state.hdbscanMinSamples || 3;
+
+    // Core threshold
+    const coreThresholdInput = document.getElementById('core-threshold');
+    if (coreThresholdInput && coreThresholdInput.value) {
+        state.coreThreshold = parseFloat(coreThresholdInput.value);
+    }
+    elements.reportCoreThreshold.value = state.coreThreshold || 0.95;
+
+    // Best clusters (editable)
+    elements.reportNumClusters.value = state.numBestClusters || 2;
+
+    // Reset results section
+    elements.step8Results.style.display = 'none';
+}
+
+function populateReportParamSelectors() {
+    // Populate X, Y, and Const param dropdowns with strategy params
+    const params = state.strategyParams || [];
+
+    // X-Axis dropdown
+    elements.reportXParam.innerHTML = params.map(p => `<option value="${p}">${p}</option>`).join('');
+
+    // Y-Axis dropdown
+    elements.reportYParam.innerHTML = params.map(p => `<option value="${p}">${p}</option>`).join('');
+
+    // Const param dropdown (with None option)
+    elements.reportConstParam.innerHTML = '<option value="">None</option>' +
+        params.map(p => `<option value="${p}">${p}</option>`).join('');
+}
+
+function addReportShortlistCondition(metric = 'sharpe_ratio', operator = '>', value = 0) {
+    const container = elements.reportShortlistConditions;
+    const row = document.createElement('div');
+    row.className = 'condition-row report-condition-row';
+
+    // Build metric options
+    const metrics = state.availableMetrics || ['sharpe_ratio', 'sortino_ratio', 'profit_factor'];
+    const metricOptions = metrics.map(m =>
+        `<option value="${m}" ${m === metric ? 'selected' : ''}>${m}</option>`
+    ).join('');
+
+    row.innerHTML = `
+        <select class="report-condition-metric">${metricOptions}</select>
+        <select class="report-condition-operator">
+            <option value=">" ${operator === '>' ? 'selected' : ''}>&gt;</option>
+            <option value=">=" ${operator === '>=' ? 'selected' : ''}>&gt;=</option>
+            <option value="<" ${operator === '<' ? 'selected' : ''}>&lt;</option>
+            <option value="<=" ${operator === '<=' ? 'selected' : ''}>&lt;=</option>
+            <option value="==" ${operator === '==' ? 'selected' : ''}>==</option>
+        </select>
+        <input type="number" class="report-condition-value" step="any" value="${value}">
+        <button type="button" class="remove-condition btn-icon">&times;</button>
+    `;
+
+    // Add remove handler
+    row.querySelector('.remove-condition').addEventListener('click', () => row.remove());
+
+    container.appendChild(row);
+}
+
+function getReportShortlistConditions() {
+    const conditions = [];
+    document.querySelectorAll('#report-shortlist-conditions .report-condition-row').forEach(row => {
+        conditions.push({
+            metric: row.querySelector('.report-condition-metric').value,
+            operator: row.querySelector('.report-condition-operator').value,
+            value: parseFloat(row.querySelector('.report-condition-value').value)
+        });
+    });
+    return conditions;
+}
+
+async function generateReport() {
+    try {
+        // Validate save path
+        const savePath = elements.reportSavePath.value.trim();
+        if (!savePath) {
+            showReportPopup(false, 'Please select a directory to save the report');
+            return;
+        }
+
+        showLoading('Generating PDF report...');
+
+        // Get values from form inputs (user may have modified them)
+        const xParam = elements.reportXParam.value;
+        const yParam = elements.reportYParam.value;
+        const constParam = elements.reportConstParam.value || null;
+        const shortlistEnabled = elements.reportShortlistEnabled.checked;
+        const shortlistConditions = getReportShortlistConditions();
+        const kmeansK = elements.reportKmeansK.value ? parseInt(elements.reportKmeansK.value) : null;
+        const hdbscanMinSize = parseInt(elements.reportHdbscanMinSize.value) || 5;
+        const hdbscanMinSamples = parseInt(elements.reportHdbscanMinSamples.value) || 3;
+        const coreThreshold = parseFloat(elements.reportCoreThreshold.value) || 0.95;
+        const numBestClusters = parseInt(elements.reportNumClusters.value) || 2;
+        const reportFilename = elements.reportFilename.value.trim() || 'optimization_report.pdf';
+
+        // Build request with form values
+        const request = {
+            session_id: state.sessionId,
+            report_title: elements.reportTitle.value.trim() || 'Optimization Report',
+            csv_path: state.csvPath,
+            strategy_params: state.strategyParams,
+            x_param: xParam,
+            y_param: yParam,
+            const_param: constParam,
+            shortlist_enabled: shortlistEnabled,
+            shortlist_conditions: shortlistConditions.map(c => ({
+                metric: c.metric,
+                operator: c.operator,
+                value: c.value
+            })),
+            kmeans_k: kmeansK,
+            hdbscan_min_cluster_size: hdbscanMinSize,
+            hdbscan_min_samples: hdbscanMinSamples,
+            core_probability_threshold: coreThreshold,
+            num_best_clusters: numBestClusters,
+            report_filename: reportFilename,
+            save_path: savePath
+        };
+
+        // Fetch the report
+        const response = await fetch(`${API_BASE}/steps/generate-report`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(request)
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(errorData.detail || 'Failed to generate report');
+        }
+
+        const result = await response.json();
+
+        if (result.report_generated) {
+            showReportPopup(true, 'Report generated successfully!', result.report_path);
+            elements.step8Results.style.display = 'block';
+        } else {
+            showReportPopup(false, result.message || 'Failed to generate report');
+        }
+    } catch (error) {
+        showReportPopup(false, `Error: ${error.message}`);
+    } finally {
+        hideLoading();
+    }
+}
+
+function openReportDirectoryBrowser() {
+    reportBrowseMode = true;
+    openFileBrowser();
+}
+
+function showReportPopup(success, message, path = null) {
+    const icon = elements.reportPopupModal.querySelector('.popup-icon');
+    if (success) {
+        icon.className = 'popup-icon success-icon';
+        icon.innerHTML = '&#10003;';
+        elements.popupTitle.textContent = 'Report Generated Successfully!';
+    } else {
+        icon.className = 'popup-icon error-icon';
+        icon.innerHTML = '&#10007;';
+        elements.popupTitle.textContent = 'Error';
+    }
+
+    elements.popupMessage.textContent = message;
+
+    if (path) {
+        elements.popupPath.textContent = path;
+        elements.popupPath.style.display = 'block';
+    } else {
+        elements.popupPath.style.display = 'none';
+    }
+
+    elements.reportPopupModal.style.display = 'flex';
+}
+
+function closeReportPopup() {
+    elements.reportPopupModal.style.display = 'none';
+}
+
+// ==================== Window Resize Handler ====================
+
+// Debounce function for resize handler
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+// Resize all Plotly charts on window resize
+const handleWindowResize = debounce(() => {
+    // Get all chart containers
+    const chartContainers = [
+        'heatmap-container',
+        'pca-variance-chart',
+        'pca-scatter-chart',
+        'kmeans-scatter-chart',
+        'hdbscan-grid-chart',
+        'hdbscan-core-grid-chart',
+        'hdbscan-final-scatter-chart'
+    ];
+
+    chartContainers.forEach(id => {
+        const container = document.getElementById(id);
+        if (container && container.data) {
+            Plotly.Plots.resize(container);
+        }
+    });
+
+    // Resize cluster heatmaps
+    document.querySelectorAll('.cluster-heatmap').forEach(container => {
+        if (container.data) {
+            Plotly.Plots.resize(container);
+        }
+    });
+}, 250);
+
+// Add window resize event listener
+window.addEventListener('resize', handleWindowResize);

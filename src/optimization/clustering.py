@@ -1,11 +1,12 @@
 """Clustering functions for optimization pipeline."""
 
 import warnings
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 from sklearn.cluster import KMeans
+from sklearn.metrics import silhouette_score
 
 # Suppress sklearn warnings
 warnings.filterwarnings(
@@ -146,3 +147,62 @@ def calculate_auto_k(n_samples: int) -> int:
     """
     k = int(1 / 0.05)  # = 20
     return max(2, min(k, n_samples // 2))  # Ensure k is reasonable
+
+
+def compute_cluster_validation_metrics(
+    X: np.ndarray,
+    labels: np.ndarray
+) -> Dict[str, Any]:
+    """
+    Compute clustering validation metrics including silhouette score and noise ratio.
+
+    Args:
+        X: Feature matrix used for clustering (n_samples, n_features)
+        labels: Cluster labels array (-1 for noise in HDBSCAN)
+
+    Returns:
+        Dict with:
+        - silhouette_score: float or None (if can't be computed)
+        - noise_ratio: float (proportion of points labeled as noise)
+        - num_clusters: int (excluding noise cluster)
+        - cluster_sizes: list of cluster sizes
+    """
+    result = {
+        'silhouette_score': None,
+        'noise_ratio': 0.0,
+        'num_clusters': 0,
+        'cluster_sizes': []
+    }
+
+    n_samples = len(labels)
+    if n_samples == 0:
+        return result
+
+    # Count noise points (label == -1)
+    noise_mask = labels == -1
+    noise_count = np.sum(noise_mask)
+    result['noise_ratio'] = noise_count / n_samples
+
+    # Get unique clusters (excluding noise)
+    unique_labels = set(labels) - {-1}
+    result['num_clusters'] = len(unique_labels)
+
+    # Calculate cluster sizes
+    result['cluster_sizes'] = [np.sum(labels == label) for label in sorted(unique_labels)]
+
+    # Calculate silhouette score (requires at least 2 clusters and some non-noise points)
+    non_noise_mask = ~noise_mask
+    non_noise_count = np.sum(non_noise_mask)
+
+    if result['num_clusters'] >= 2 and non_noise_count > result['num_clusters']:
+        try:
+            # Only compute silhouette for non-noise points
+            X_non_noise = X[non_noise_mask]
+            labels_non_noise = labels[non_noise_mask]
+
+            result['silhouette_score'] = silhouette_score(X_non_noise, labels_non_noise)
+        except Exception:
+            # Silhouette calculation can fail in edge cases
+            result['silhouette_score'] = None
+
+    return result

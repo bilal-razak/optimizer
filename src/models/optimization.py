@@ -155,7 +155,11 @@ class OptimizationResponse(BaseModel):
 # Step 1: Load Data - show head and info
 class StepLoadDataRequest(BaseModel):
     """Request for Step 1: Load CSV and show data preview."""
-    csv_path: str = Field(..., description="Path to the backtest results CSV file")
+    csv_paths: List[str] = Field(
+        ...,
+        min_length=1,
+        description="List of paths to backtest results CSV files (will be concatenated)"
+    )
     strategy_params: List[str] = Field(
         ...,
         min_length=2,
@@ -175,6 +179,7 @@ class ColumnInfo(BaseModel):
 class StepLoadDataResponse(BaseModel):
     """Response for Step 1: Data preview and info."""
     session_id: str = Field(..., description="Session ID for subsequent steps")
+    num_files: int = Field(..., description="Number of CSV files loaded")
     num_rows: int = Field(..., description="Total number of rows")
     num_columns: int = Field(..., description="Total number of columns")
     columns: List[str] = Field(..., description="All column names")
@@ -414,3 +419,75 @@ class StepBestClustersResponse(BaseModel):
         default=None,
         description="Number of core points in each cluster"
     )
+
+
+# ============== Step 8: Report Generation Models ==============
+
+class ReportShortlistCondition(BaseModel):
+    """Shortlist condition for report generation."""
+    metric: str
+    operator: Literal[">", ">=", "<", "<=", "=="]
+    value: float
+
+
+class StepGenerateReportRequest(BaseModel):
+    """Request for Step 8: Generate PDF report with all configurations."""
+    session_id: str = Field(..., description="Session ID from previous steps")
+
+    # Report metadata
+    report_title: str = Field(..., description="Custom title for the report (e.g., 'NIFTY 50 - Momentum Strategy Optimization')")
+
+    # Step 1: Load Data config
+    csv_path: str = Field(..., description="Path to CSV file")
+    strategy_params: List[str] = Field(..., min_length=2, max_length=4, description="Strategy parameter columns")
+
+    # Step 2: Heatmap config
+    x_param: str = Field(..., description="X-axis parameter for heatmaps")
+    y_param: str = Field(..., description="Y-axis parameter for heatmaps")
+    const_param: Optional[str] = Field(default=None, description="Constant parameter for heatmaps")
+
+    # Step 2b: Shortlist config
+    shortlist_enabled: bool = Field(default=False, description="Whether shortlisting is enabled")
+    shortlist_conditions: List[ReportShortlistCondition] = Field(
+        default_factory=list,
+        description="Shortlist conditions if enabled"
+    )
+
+    # Step 4: K-Means config
+    kmeans_k: Optional[int] = Field(default=None, ge=2, description="K value (None for auto)")
+
+    # Step 5-6: HDBSCAN config
+    hdbscan_min_cluster_size: int = Field(..., ge=2, description="HDBSCAN min_cluster_size")
+    hdbscan_min_samples: int = Field(..., ge=1, description="HDBSCAN min_samples")
+    hdbscan_grid_min_sizes: List[int] = Field(
+        default=[3, 5, 10, 15, 20],
+        description="Min cluster sizes for grid search"
+    )
+    hdbscan_grid_min_samples: List[int] = Field(
+        default=[3, 5, 10, 15, 20],
+        description="Min samples for grid search"
+    )
+    core_probability_threshold: float = Field(default=0.95, ge=0.0, le=1.0, description="Core point probability threshold")
+
+    # Step 7: Best Clusters config
+    num_best_clusters: int = Field(default=2, ge=1, description="Number of best clusters to show")
+
+    # Output config
+    report_filename: str = Field(
+        default="optimization_report.pdf",
+        description="Filename for the PDF report (without path)"
+    )
+    save_path: str = Field(
+        ...,
+        description="Directory path to save the report"
+    )
+
+
+class StepGenerateReportResponse(BaseModel):
+    """Response for Step 8: Generated report."""
+    session_id: str
+    report_generated: bool = Field(..., description="Whether report was generated successfully")
+    report_path: Optional[str] = Field(default=None, description="Path where report was saved (if save_path provided)")
+    download_available: bool = Field(default=False, description="Whether report is available for download")
+    report_filename: str = Field(..., description="Generated filename for the report")
+    message: str = Field(..., description="Status message")
