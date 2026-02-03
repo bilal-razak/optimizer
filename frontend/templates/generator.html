@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Combination Generator - Optimizer Agent</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        /* Generator-specific styles */
+        .generator-section {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid var(--border-color);
+        }
+
+        .generator-section h3 {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
+        }
+
+        /* Parameters Section */
+        .parameter-list {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .parameter-row {
+            display: grid;
+            grid-template-columns: 1fr repeat(3, 100px) 40px;
+            gap: 12px;
+            align-items: end;
+            padding: 15px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+        }
+
+        .parameter-row .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .parameter-row .form-group label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .parameter-row input {
+            padding: 8px 12px;
+        }
+
+        .parameter-row .btn-remove {
+            align-self: end;
+            width: 36px;
+            height: 36px;
+            padding: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .add-parameter-btn {
+            margin-top: 10px;
+        }
+
+        /* Dependencies Section */
+        .dependency-list {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .dependency-row {
+            display: grid;
+            grid-template-columns: 150px 1fr 40px;
+            gap: 12px;
+            align-items: end;
+            padding: 12px 15px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+        }
+
+        .dependency-row .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .dependency-row .form-group label {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            font-weight: 500;
+        }
+
+        .dependency-help {
+            margin-top: 10px;
+            padding: 12px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        .dependency-help code {
+            background: var(--card-bg);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            color: var(--primary-color);
+        }
+
+        /* Naming Configuration */
+        .naming-config {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .naming-preview {
+            margin-top: 15px;
+            padding: 15px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+        }
+
+        .naming-preview label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: block;
+            margin-bottom: 8px;
+        }
+
+        .preview-text {
+            font-family: monospace;
+            color: var(--primary-color);
+            word-break: break-all;
+        }
+
+        /* Output Configuration */
+        .output-config {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        .output-config .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .output-config label {
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .path-input-group {
+            display: flex;
+            gap: 10px;
+        }
+
+        .path-input-group input {
+            flex: 1;
+        }
+
+        /* Radio Group */
+        .radio-group {
+            display: flex;
+            gap: 20px;
+        }
+
+        .radio-label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            cursor: pointer;
+        }
+
+        .radio-label input[type="radio"] {
+            accent-color: var(--primary-color);
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 25px;
+        }
+
+        .action-buttons .btn {
+            flex: 1;
+            padding: 14px 30px;
+            font-size: 1rem;
+        }
+
+        /* Results Section */
+        .results-section {
+            display: none;
+        }
+
+        .results-section.visible {
+            display: block;
+        }
+
+        .results-summary {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+            margin-bottom: 25px;
+        }
+
+        .result-card {
+            background: var(--bg-color);
+            padding: 20px;
+            border-radius: var(--radius);
+            text-align: center;
+            border: 1px solid var(--border-color);
+        }
+
+        .result-value {
+            font-size: 2rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            display: block;
+        }
+
+        .result-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-top: 5px;
+        }
+
+        /* Preview Table */
+        .preview-table-container {
+            max-height: 400px;
+            overflow: auto;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            margin-top: 15px;
+        }
+
+        .preview-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .preview-table th,
+        .preview-table td {
+            padding: 10px 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            white-space: nowrap;
+        }
+
+        .preview-table th {
+            background: var(--bg-color);
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            z-index: 1;
+        }
+
+        .preview-table tr:hover {
+            background: var(--card-bg-hover);
+        }
+
+        /* Download Buttons */
+        .download-buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 20px;
+        }
+
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: var(--success-color);
+            color: white;
+            text-decoration: none;
+            border-radius: var(--radius);
+            font-weight: 500;
+            transition: background 0.2s;
+        }
+
+        .download-btn:hover {
+            background: #15803d;
+        }
+
+        .download-icon {
+            font-size: 1.1rem;
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 30px;
+            color: var(--text-muted);
+        }
+
+        .empty-state p {
+            font-style: italic;
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .parameter-row {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            .parameter-row .form-group:first-child {
+                grid-column: span 2;
+            }
+
+            .parameter-row .btn-remove {
+                grid-column: 2;
+                justify-self: end;
+            }
+
+            .dependency-row {
+                grid-template-columns: 1fr;
+            }
+
+            .naming-config,
+            .output-config {
+                grid-template-columns: 1fr;
+            }
+
+            .action-buttons {
+                flex-direction: column;
+            }
+
+            .action-buttons .btn {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body class="light-theme">
+    <div class="container">
+        <!-- Navigation Header -->
+        <nav class="nav-header">
+            <a href="/" class="nav-back">
+                <span class="nav-icon">&#8592;</span> Home
+            </a>
+            <span class="nav-title">Optimizer Agent</span>
+        </nav>
+
+        <!-- Header -->
+        <header class="header">
+            <h1>Combination Generator</h1>
+            <p class="subtitle">Generate parameter combinations for strategy backtesting</p>
+            <button id="theme-toggle-btn" class="btn btn-small theme-toggle">
+                <span class="theme-icon">&#9790;</span> Dark Mode
+            </button>
+        </header>
+
+        <!-- Parameters Section -->
+        <section class="generator-section">
+            <h3>Parameters</h3>
+            <p class="hint">Define parameters with their value ranges. Each parameter will generate values from min to max with the specified step.</p>
+
+            <div id="parameter-list" class="parameter-list">
+                <!-- Parameter rows will be added here dynamically -->
+            </div>
+
+            <button id="add-parameter-btn" class="btn btn-secondary add-parameter-btn">
+                + Add Parameter
+            </button>
+        </section>
+
+        <!-- Dependencies Section -->
+        <section class="generator-section">
+            <h3>Dependencies (Optional)</h3>
+            <p class="hint">Add conditions or expressions to filter or modify combinations.</p>
+
+            <div id="dependency-list" class="dependency-list">
+                <!-- Dependency rows will be added here dynamically -->
+            </div>
+
+            <button id="add-dependency-btn" class="btn btn-secondary add-parameter-btn">
+                + Add Dependency
+            </button>
+
+            <div class="dependency-help">
+                <strong>Examples:</strong><br>
+                <code>param2 > param1</code> - Filter: keep only rows where param2 is greater than param1<br>
+                <code>param2 >= param1 + 5</code> - Filter: param2 must be at least 5 more than param1<br>
+                <code>param2 != param1</code> - Filter: exclude rows where param2 equals param1
+            </div>
+        </section>
+
+        <!-- Naming Configuration -->
+        <section class="generator-section">
+            <h3>Naming Configuration</h3>
+            <p class="hint">Configure how the __name__ column is formatted.</p>
+
+            <div class="naming-config">
+                <div class="form-group">
+                    <label for="name-default">Default Name</label>
+                    <input type="text" id="name-default" value="Strategy" placeholder="e.g., Strategy_v1">
+                </div>
+                <div class="form-group">
+                    <label>Position</label>
+                    <div class="radio-group">
+                        <label class="radio-label">
+                            <input type="radio" name="name-position" value="prefix" checked>
+                            Prefix
+                        </label>
+                        <label class="radio-label">
+                            <input type="radio" name="name-position" value="postfix">
+                            Postfix
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="naming-preview">
+                <label>Preview:</label>
+                <span id="name-preview" class="preview-text">Strategyparam1[10]param2[20]</span>
+            </div>
+        </section>
+
+        <!-- Output Configuration -->
+        <section class="generator-section">
+            <h3>Output Configuration</h3>
+
+            <div class="output-config">
+                <div class="form-group">
+                    <label for="save-path">Save Directory (Optional)</label>
+                    <div class="path-input-group">
+                        <input type="text" id="save-path" placeholder="Leave empty for download only">
+                        <button id="browse-path-btn" class="btn btn-secondary">Browse</button>
+                    </div>
+                    <span class="hint">If specified, CSV files will be saved to this directory</span>
+                </div>
+                <div class="form-group">
+                    <label for="filename-prefix">Filename Prefix</label>
+                    <input type="text" id="filename-prefix" value="combinations" placeholder="e.g., strategy_params">
+                </div>
+            </div>
+        </section>
+
+        <!-- Action Buttons -->
+        <div class="action-buttons">
+            <button id="calculate-count-btn" class="btn btn-secondary">
+                Calculate Count
+            </button>
+            <button id="preview-btn" class="btn btn-primary">
+                Preview
+            </button>
+            <button id="generate-btn" class="btn btn-success">
+                Generate & Download
+            </button>
+        </div>
+
+        <!-- Results Section -->
+        <section id="results-section" class="generator-section results-section">
+            <h3>Results</h3>
+
+            <div class="results-summary">
+                <div class="result-card">
+                    <span id="total-combinations" class="result-value">-</span>
+                    <span class="result-label">Total Combinations</span>
+                </div>
+                <div class="result-card">
+                    <span id="num-files" class="result-value">-</span>
+                    <span class="result-label">Files to Generate</span>
+                </div>
+            </div>
+
+            <div id="preview-container">
+                <h4>Preview (first 100 rows)</h4>
+                <div id="preview-table-wrapper" class="preview-table-container">
+                    <div class="empty-state">
+                        <p>Click "Preview" to see a sample of the combinations</p>
+                    </div>
+                </div>
+            </div>
+
+            <div id="download-container" class="download-buttons" style="display: none;">
+                <!-- Download buttons will be added here -->
+            </div>
+        </section>
+
+        <!-- Loading Indicator -->
+        <div id="loading" class="loading" style="display: none;">
+            <div class="spinner"></div>
+            <p id="loading-message">Processing...</p>
+        </div>
+    </div>
+
+    <!-- Directory Browser Modal -->
+    <div id="dir-browser-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>Select Directory</h3>
+                <button id="close-modal-btn" class="btn-close">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="browser-path">
+                    <button id="go-up-btn" class="btn btn-small">&#8593; Up</button>
+                    <input type="text" id="current-path" class="path-input" readonly>
+                </div>
+                <div class="browser-contents">
+                    <div id="browser-loading" class="browser-loading" style="display: none;">
+                        <div class="spinner-small"></div>
+                        <span>Loading...</span>
+                    </div>
+                    <ul id="dir-list" class="file-list"></ul>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="cancel-browse-btn" class="btn btn-secondary">Cancel</button>
+                <button id="select-dir-btn" class="btn btn-primary">Select This Directory</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/generator.js"></script>
+</body>
+</html>

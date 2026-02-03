@@ -74,6 +74,44 @@ body {
     padding: 20px;
 }
 
+/* ==================== Navigation Header ==================== */
+.nav-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 20px;
+    background: var(--card-bg);
+    border-radius: var(--radius);
+    margin-bottom: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.nav-back {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: var(--primary-color);
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: var(--radius);
+    transition: all 0.2s;
+}
+
+.nav-back:hover {
+    background: var(--primary-glow);
+}
+
+.nav-icon {
+    font-size: 1.2rem;
+}
+
+.nav-title {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-weight: 500;
+}
+
 /* ==================== Header ==================== */
 .header {
     text-align: center;
