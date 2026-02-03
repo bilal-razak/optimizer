@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Optimizer Agent</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <style>
+        /* Homepage-specific styles */
+        .home-container {
+            min-height: calc(100vh - 200px);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+        }
+
+        .tool-cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 30px;
+            max-width: 900px;
+            width: 100%;
+        }
+
+        .tool-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding: 40px 30px;
+            background: var(--card-bg);
+            border: 2px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            text-decoration: none;
+            color: var(--text-color);
+            transition: all 0.3s ease;
+            box-shadow: var(--shadow);
+        }
+
+        .tool-card:hover {
+            transform: translateY(-5px);
+            border-color: var(--primary-color);
+            box-shadow: var(--shadow-lg), 0 0 20px var(--primary-glow);
+        }
+
+        .tool-icon {
+            font-size: 4rem;
+            margin-bottom: 20px;
+            filter: grayscale(0);
+        }
+
+        .tool-card h2 {
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            color: var(--primary-color);
+        }
+
+        .tool-card p {
+            font-size: 1rem;
+            color: var(--text-muted);
+            line-height: 1.6;
+        }
+
+        .home-header {
+            text-align: center;
+            padding: 40px 20px 20px;
+            position: relative;
+        }
+
+        .home-header h1 {
+            font-size: 3rem;
+            font-weight: 700;
+            color: var(--primary-color);
+            margin-bottom: 10px;
+        }
+
+        .home-header .subtitle {
+            font-size: 1.2rem;
+            color: var(--text-muted);
+        }
+
+        @media (max-width: 768px) {
+            .home-header h1 {
+                font-size: 2rem;
+            }
+
+            .tool-cards {
+                grid-template-columns: 1fr;
+            }
+
+            .tool-card {
+                padding: 30px 20px;
+            }
+
+            .tool-icon {
+                font-size: 3rem;
+            }
+        }
+    </style>
+</head>
+<body class="light-theme">
+    <div class="container">
+        <!-- Header -->
+        <header class="home-header">
+            <h1>Optimizer Agent</h1>
+            <p class="subtitle">Trading Strategy Parameter Optimization Tools</p>
+            <button id="theme-toggle-btn" class="btn btn-small theme-toggle">
+                <span class="theme-icon">&#9790;</span> Dark Mode
+            </button>
+        </header>
+
+        <!-- Main Content -->
+        <main class="home-container">
+            <div class="tool-cards">
+                <a href="/generator" class="tool-card">
+                    <div class="tool-icon">&#9881;</div>
+                    <h2>Combination Generator</h2>
+                    <p>Generate parameter combinations for strategy backtesting. Define parameters with ranges and dependencies to create comprehensive test configurations.</p>
+                </a>
+                <a href="/optimizer" class="tool-card">
+                    <div class="tool-icon">&#128202;</div>
+                    <h2>Optimizer Dashboard</h2>
+                    <p>Analyze and optimize backtest results using clustering analysis. Identify best-performing parameter combinations through PCA and HDBSCAN.</p>
+                </a>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // Theme toggle functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const themeToggleBtn = document.getElementById('theme-toggle-btn');
+            const body = document.body;
+
+            // Check for saved theme preference
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                body.classList.remove('light-theme');
+                body.classList.add('dark-theme');
+                updateThemeButton(true);
+            }
+
+            themeToggleBtn.addEventListener('click', function() {
+                const isDark = body.classList.contains('dark-theme');
+                if (isDark) {
+                    body.classList.remove('dark-theme');
+                    body.classList.add('light-theme');
+                    localStorage.setItem('theme', 'light');
+                } else {
+                    body.classList.remove('light-theme');
+                    body.classList.add('dark-theme');
+                    localStorage.setItem('theme', 'dark');
+                }
+                updateThemeButton(!isDark);
+            });
+
+            function updateThemeButton(isDark) {
+                const icon = themeToggleBtn.querySelector('.theme-icon');
+                if (isDark) {
+                    icon.innerHTML = '&#9788;';
+                    themeToggleBtn.innerHTML = '<span class="theme-icon">&#9788;</span> Light Mode';
+                } else {
+                    icon.innerHTML = '&#9790;';
+                    themeToggleBtn.innerHTML = '<span class="theme-icon">&#9790;</span> Dark Mode';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
