@@ -896,87 +896,41 @@ def generate_heatmaps(
                 }
                 results.append(fig_json)
 
-    # 4-param mode: grid of heatmaps
+    # 4-param mode: individual heatmaps per (const1, const2) combination
+    # This enables filtering in the UI by both const values
     else:
         const1_values = sorted(df[const_param1].unique())
         const2_values = sorted(df[const_param2].unique())
 
-        for col, title, reverse in available_metrics:
-            vmin, vmax = vmin_vmax[col]
+        for const1_val in const1_values:
+            for const2_val in const2_values:
+                subset = df[(df[const_param1] == const1_val) & (df[const_param2] == const2_val)]
 
-            # Create subplot grid
-            n_cols = len(const2_values)
-            n_rows = len(const1_values)
+                if subset.empty:
+                    continue
 
-            fig = make_subplots(
-                rows=n_rows, cols=n_cols,
-                subplot_titles=[
-                    f'{const_param1}={c1}, {const_param2}={c2}'
-                    for c1 in const1_values for c2 in const2_values
-                ],
-                horizontal_spacing=0.05,
-                vertical_spacing=0.08
-            )
-
-            for i, const1_val in enumerate(const1_values):
-                for j, const2_val in enumerate(const2_values):
-                    subset = df[(df[const_param1] == const1_val) & (df[const_param2] == const2_val)]
-
-                    if subset.empty:
-                        continue
-
+                for col, title, reverse in available_metrics:
+                    vmin, vmax = vmin_vmax[col]
                     pivot = subset.pivot_table(index=y_param, columns=x_param, values=col, aggfunc='mean')
+                    highlight_cells = highlight_cells_map.get((const1_val, const2_val), None)
 
-                    # Ensure consistent axis ordering
-                    all_x = sorted(df[x_param].unique())
-                    all_y = sorted(df[y_param].unique())
-                    pivot = pivot.reindex(index=all_y, columns=all_x)
-
-                    colorscale = 'RdYlGn' if not reverse else 'RdYlGn_r'
-
-                    fig.add_trace(
-                        go.Heatmap(
-                            z=pivot.values,
-                            x=[str(x) for x in pivot.columns],
-                            y=[str(y) for y in pivot.index],
-                            colorscale=colorscale,
-                            zmin=vmin,
-                            zmax=vmax,
-                            text=np.round(pivot.values, 2),
-                            texttemplate='%{text:.2f}',
-                            textfont=dict(size=8),
-                            showscale=(i == 0 and j == n_cols - 1),
-                            colorbar=dict(title=col) if (i == 0 and j == n_cols - 1) else None
-                        ),
-                        row=i + 1, col=j + 1
+                    # Generate individual heatmap with subtitle showing both const values
+                    fig = _generate_single_heatmap(
+                        pivot, col, title, reverse, x_param, y_param,
+                        vmin, vmax, highlight_cells,
+                        subtitle=f'{const_param1}={const1_val}, {const_param2}={const2_val}'
                     )
-
-                    # Add highlight rectangles
-                    highlight_cells = highlight_cells_map.get((const1_val, const2_val), [])
-                    x_vals = list(pivot.columns)
-                    y_vals = list(pivot.index)
-
-                    for (x_val, y_val) in highlight_cells:
-                        if x_val in x_vals and y_val in y_vals:
-                            x_idx = x_vals.index(x_val)
-                            y_idx = y_vals.index(y_val)
-
-                            fig.add_shape(
-                                type='rect',
-                                x0=x_idx - 0.5, x1=x_idx + 0.5,
-                                y0=y_idx - 0.5, y1=y_idx + 0.5,
-                                line=dict(color='black', width=2),
-                                fillcolor='rgba(0,0,0,0)',
-                                row=i + 1, col=j + 1
-                            )
-
-            fig.update_layout(
-                title=f'{title}: {x_param} x {y_param} grid by {const_param1} and {const_param2}',
-                height=300 * n_rows,
-                width=400 * n_cols
-            )
-
-            results.append(_fig_to_json(fig))
+                    fig_json = _fig_to_json(fig)
+                    # Add metadata for navigation filtering (supports filtering by both const values)
+                    fig_json['_metadata'] = {
+                        'metric': title,
+                        'metric_col': col,
+                        'const_value': str(const1_val),
+                        'const_value2': str(const2_val),
+                        'const_param': const_param1,
+                        'const_param2': const_param2
+                    }
+                    results.append(fig_json)
 
     return results
 

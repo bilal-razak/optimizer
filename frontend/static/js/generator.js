@@ -44,7 +44,8 @@ function cacheElements() {
         downloadContainer: document.getElementById('download-container'),
 
         // Inputs
-        nameDefault: document.getElementById('name-default'),
+        namePrefix: document.getElementById('name-prefix'),
+        namePostfix: document.getElementById('name-postfix'),
         savePath: document.getElementById('save-path'),
         filenamePrefix: document.getElementById('filename-prefix'),
 
@@ -86,10 +87,8 @@ function setupEventListeners() {
     elements.themeToggleBtn.addEventListener('click', toggleTheme);
 
     // Name configuration changes
-    elements.nameDefault.addEventListener('input', updateNamePreview);
-    document.querySelectorAll('input[name="name-position"]').forEach(radio => {
-        radio.addEventListener('change', updateNamePreview);
-    });
+    elements.namePrefix.addEventListener('input', updateNamePreview);
+    elements.namePostfix.addEventListener('input', updateNamePreview);
 
     // Directory browser
     elements.browsePathBtn.addEventListener('click', openDirectoryBrowser);
@@ -298,28 +297,33 @@ function removeDependency(depId) {
  * Update the name preview
  */
 function updateNamePreview() {
-    const defaultName = elements.nameDefault.value || 'Strategy';
-    const position = document.querySelector('input[name="name-position"]:checked').value;
+    const prefix = elements.namePrefix.value || '';
+    const postfix = elements.namePostfix.value || '';
 
-    // Build sample name from first few parameters
-    let paramParts = '';
-    state.parameters.slice(0, 2).forEach(param => {
+    // Group parameters by indicator prefix (text before first underscore)
+    const indicatorGroups = {};
+    state.parameters.forEach(param => {
+        const parts = param.name.split('_');
+        const indicator = parts.length > 1 ? parts[0] : param.name;
+        if (!indicatorGroups[indicator]) {
+            indicatorGroups[indicator] = [];
+        }
         const sampleValue = param.min !== undefined ? param.min : 0;
-        paramParts += `${param.name}[${sampleValue}]`;
+        indicatorGroups[indicator].push(sampleValue);
     });
 
-    if (state.parameters.length > 2) {
-        paramParts += '...';
+    // Build indicator parts: EMA[1, 10] + ADX[5, 14]
+    const indicatorParts = Object.entries(indicatorGroups).map(([indicator, values]) => {
+        return `${indicator}[${values.join(', ')}]`;
+    });
+
+    let paramParts = indicatorParts.join(' + ');
+    if (paramParts === '') {
+        paramParts = 'indicator[values]';
     }
 
-    let preview;
-    if (position === 'prefix') {
-        preview = defaultName + paramParts;
-    } else {
-        preview = paramParts + defaultName;
-    }
-
-    elements.namePreview.textContent = preview || 'Strategy';
+    const preview = prefix + paramParts + postfix;
+    elements.namePreview.textContent = preview;
 }
 
 /**
@@ -345,8 +349,8 @@ function getRequestData() {
     return {
         parameters,
         dependencies,
-        name_default: elements.nameDefault.value || 'Strategy',
-        name_position: document.querySelector('input[name="name-position"]:checked').value
+        name_prefix: elements.namePrefix.value || '',
+        name_postfix: elements.namePostfix.value || ''
     };
 }
 

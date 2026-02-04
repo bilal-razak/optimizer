@@ -2,6 +2,7 @@
 
 import itertools
 import re
+from collections import OrderedDict
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
@@ -151,76 +152,109 @@ def apply_dependencies(
         return df
 
     result = df.copy()
+    dependent_params = []  # Track dependent parameters created by expressions
 
     for dep in dependencies:
         if dep.type == "expression":
-            # Expression type: compute a value
+            # Expression type: create/compute a dependent parameter
             left, op, right = _parse_expression(dep.expression)
             if op == '=':
-                # Apply expression to compute new column values
-                def compute_row(row):
-                    context = {col: row[col] for col in result.columns if col != '__name__'}
-                    return _safe_eval(right, context)
+                # Create a closure to capture the current state of 'right'
+                expr = right
 
-                if left in result.columns:
-                    result[left] = result.apply(compute_row, axis=1)
+                def make_compute_row(expression):
+                    def compute_row(row):
+                        context = {col: row[col] for col in result.columns if col != '__name__'}
+                        return _safe_eval(expression, context)
+                    return compute_row
+
+                # Create or update the column with computed values
+                result[left] = result.apply(make_compute_row(expr), axis=1)
+
+                # Track this as a dependent parameter for __name__ generation
+                if left not in dependent_params:
+                    dependent_params.append(left)
 
         elif dep.type in ["condition", "filter"]:
-            # Condition/Filter type: filter rows
+            # Condition/Filter type: filter rows based on any parameters (including dependent ones)
             left, op, right = _parse_expression(dep.expression)
 
-            def evaluate_condition(row):
-                context = {col: row[col] for col in result.columns if col != '__name__'}
-                left_val = _safe_eval(left, context)
-                right_val = _safe_eval(right, context)
+            # Create a closure to capture current state
+            def make_evaluate_condition(l, o, r):
+                def evaluate_condition(row):
+                    context = {col: row[col] for col in result.columns if col != '__name__'}
+                    left_val = _safe_eval(l, context)
+                    right_val = _safe_eval(r, context)
 
-                if op == '>':
-                    return left_val > right_val
-                elif op == '>=':
-                    return left_val >= right_val
-                elif op == '<':
-                    return left_val < right_val
-                elif op == '<=':
-                    return left_val <= right_val
-                elif op == '==':
-                    return left_val == right_val
-                elif op == '!=':
-                    return left_val != right_val
-                return True
+                    if o == '>':
+                        return left_val > right_val
+                    elif o == '>=':
+                        return left_val >= right_val
+                    elif o == '<':
+                        return left_val < right_val
+                    elif o == '<=':
+                        return left_val <= right_val
+                    elif o == '==':
+                        return left_val == right_val
+                    elif o == '!=':
+                        return left_val != right_val
+                    return True
+                return evaluate_condition
 
-            mask = result.apply(evaluate_condition, axis=1)
+            mask = result.apply(make_evaluate_condition(left, op, right), axis=1)
             result = result[mask].reset_index(drop=True)
 
-    return result
+    return result, dependent_params
 
 
 def generate_name_column(
     df: pd.DataFrame,
     params: List[str],
-    default: str,
-    position: str
+    prefix: str = "",
+    postfix: str = ""
 ) -> pd.Series:
     """
     Generate __name__ column based on format.
 
-    Format: {default}{param1_name}[{param1_value}]{param2_name}[{param2_value}]...
-    or with default as postfix.
+    Groups parameters by indicator prefix (text before first underscore).
+    Format: {prefix}<indicator1>[val1, val2, ...] + <indicator2>[val1, val2, ...] + ...{postfix}
+
+    Example: Given params EMA_tf=5, EMA_len=10, ADX_tf=15, ADX_dilen=14
+    With prefix="Strategy_", postfix="_v1"
+    Output: Strategy_EMA[5, 10] + ADX[15, 14]_v1
 
     Args:
         df: DataFrame with parameter values
-        params: List of parameter names in order
-        default: Default name string
-        position: "prefix" or "postfix"
+        params: List of parameter names in order (format: <indicator>_<param_name>)
+        prefix: String to prepend to the name (empty string if not needed)
+        postfix: String to append to the name (empty string if not needed)
 
     Returns:
         Series with formatted names
     """
+    # Group parameters by indicator prefix
+    def get_indicator_prefix(param_name: str) -> str:
+        """Extract indicator prefix from parameter name (text before first underscore)."""
+        if '_' in param_name:
+            return param_name.split('_')[0]
+        return param_name  # Use full name if no underscore
+
+    # Build ordered dict of indicator -> list of param names
+    indicator_params = OrderedDict()
+    for param in params:
+        if param in df.columns:
+            indicator = get_indicator_prefix(param)
+            if indicator not in indicator_params:
+                indicator_params[indicator] = []
+            indicator_params[indicator].append(param)
+
     def format_row(row):
-        param_parts = ''.join(f"{p}[{row[p]}]" for p in params if p in df.columns)
-        if position == "prefix":
-            return f"{default}{param_parts}"
-        else:
-            return f"{param_parts}{default}"
+        parts = []
+        for indicator, param_list in indicator_params.items():
+            values = [str(row[p]) for p in param_list]
+            parts.append(f"{indicator}[{', '.join(values)}]")
+        indicator_part = ' + '.join(parts)
+        return f"{prefix}{indicator_part}{postfix}"
 
     return df.apply(format_row, axis=1)
 
@@ -228,17 +262,17 @@ def generate_name_column(
 def generate_combinations(
     params: List[ParameterConfig],
     dependencies: List[DependencyConfig] = None,
-    name_default: str = "Strategy",
-    name_position: str = "prefix"
+    name_prefix: str = "",
+    name_postfix: str = ""
 ) -> pd.DataFrame:
     """
     Generate all valid parameter combinations.
 
     Args:
         params: List of parameter configurations
-        dependencies: Optional list of dependencies
-        name_default: Default part of __name__
-        name_position: "prefix" or "postfix"
+        dependencies: Optional list of dependencies (expressions create dependent params, conditions filter)
+        name_prefix: Prefix for __name__ column (prepended to indicator groups)
+        name_postfix: Postfix for __name__ column (appended after indicator groups)
 
     Returns:
         DataFrame with all combinations
@@ -256,14 +290,17 @@ def generate_combinations(
     # Create DataFrame
     df = pd.DataFrame(combinations, columns=param_names)
 
-    # Apply dependencies
-    df = apply_dependencies(df, dependencies)
+    # Apply dependencies (expressions create dependent params, conditions filter rows)
+    df, dependent_params = apply_dependencies(df, dependencies)
 
-    # Generate __name__ column
-    df['__name__'] = generate_name_column(df, param_names, name_default, name_position)
+    # All params for __name__ generation (base + dependent)
+    all_param_names = param_names + dependent_params
 
-    # Reorder columns to have __name__ first
-    cols = ['__name__'] + param_names
+    # Generate __name__ column using all parameters
+    df['__name__'] = generate_name_column(df, all_param_names, name_prefix, name_postfix)
+
+    # Reorder columns to have __name__ first, then base params, then dependent params
+    cols = ['__name__'] + param_names + dependent_params
     df = df[cols]
 
     return df

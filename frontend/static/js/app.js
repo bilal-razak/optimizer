@@ -21,6 +21,9 @@ const state = {
     heatmapConstParam: null,    // The const param used for generation
     heatmapConstValues: [],     // Unique const values in generated heatmaps
     selectedConstValues: [],    // Currently selected const values for filtering
+    heatmapConstParam2: null,   // Second const param (4D mode)
+    heatmapConstValues2: [],    // Unique const2 values in generated heatmaps
+    selectedConstValues2: [],   // Currently selected const2 values for filtering
     heatmapMetrics: [],         // Unique metrics in generated heatmaps
     availableConfigs: [],
     kmeansAllStats: {},         // K-Means stats for all metrics
@@ -92,6 +95,9 @@ function cacheElements() {
     elements.heatmapXParam = document.getElementById('heatmap-x-param');
     elements.heatmapYParam = document.getElementById('heatmap-y-param');
     elements.heatmapConstParam = document.getElementById('heatmap-const-param');
+    elements.heatmapConstParam2 = document.getElementById('heatmap-const-param2');
+    elements.constParam1Group = document.getElementById('const-param1-group');
+    elements.constParam2Group = document.getElementById('const-param2-group');
     elements.showShortlisted = document.getElementById('show-shortlisted');
     elements.generateHeatmapBtn = document.getElementById('generate-heatmap-btn');
     elements.step2Results = document.getElementById('step2-results');
@@ -105,6 +111,14 @@ function cacheElements() {
     elements.constValueOptions = document.getElementById('const-value-options');
     elements.constSelectAll = document.getElementById('const-select-all');
     elements.constClearAll = document.getElementById('const-clear-all');
+    // Const2 navigation elements (4D mode)
+    elements.navConstValue2Group = document.getElementById('nav-const-value2-group');
+    elements.constValue2Toggle = document.getElementById('const-value2-toggle');
+    elements.constValue2Display = document.getElementById('const-value2-display');
+    elements.constValue2Dropdown = document.getElementById('const-value2-dropdown');
+    elements.constValue2Options = document.getElementById('const-value2-options');
+    elements.const2SelectAll = document.getElementById('const2-select-all');
+    elements.const2ClearAll = document.getElementById('const2-clear-all');
 
     // Step 3-7 elements
     elements.runStep3Btn = document.getElementById('run-step3-btn');
@@ -115,6 +129,7 @@ function cacheElements() {
     elements.step4Results = document.getElementById('step4-results');
     elements.approveStep4Btn = document.getElementById('approve-step4-btn');
     elements.kmeansStatsMetric = document.getElementById('kmeans-stats-metric');
+    elements.hdbscanNumBest = document.getElementById('hdbscan-num-best');
     elements.hdbscanMinSizes = document.getElementById('hdbscan-min-sizes');
     elements.hdbscanMinSamples = document.getElementById('hdbscan-min-samples');
     elements.hdbscanThreshold = document.getElementById('hdbscan-threshold');
@@ -124,6 +139,7 @@ function cacheElements() {
     elements.approveStep5Btn = document.getElementById('approve-step5-btn');
     elements.finalMinClusterSize = document.getElementById('final-min-cluster-size');
     elements.finalMinSamples = document.getElementById('final-min-samples');
+    elements.finalThreshold = document.getElementById('final-threshold');
     elements.runStep6Btn = document.getElementById('run-step6-btn');
     elements.step6Results = document.getElementById('step6-results');
     elements.approveStep6Btn = document.getElementById('approve-step6-btn');
@@ -141,6 +157,8 @@ function cacheElements() {
     elements.reportXParam = document.getElementById('report-x-param');
     elements.reportYParam = document.getElementById('report-y-param');
     elements.reportConstParam = document.getElementById('report-const-param');
+    elements.reportConstParam2 = document.getElementById('report-const-param2');
+    elements.reportConstParam2Group = document.getElementById('report-const-param2-group');
     elements.reportShortlistEnabled = document.getElementById('report-shortlist-enabled');
     elements.reportShortlistConditions = document.getElementById('report-shortlist-conditions');
     elements.reportKmeansK = document.getElementById('report-kmeans-k');
@@ -260,10 +278,24 @@ function setupEventListeners() {
     elements.constSelectAll.addEventListener('click', selectAllConstValues);
     elements.constClearAll.addEventListener('click', clearAllConstValues);
 
+    // Multi-select dropdown for const2 values (4D mode)
+    if (elements.constValue2Toggle) {
+        elements.constValue2Toggle.addEventListener('click', toggleConst2ValueDropdown);
+    }
+    if (elements.const2SelectAll) {
+        elements.const2SelectAll.addEventListener('click', selectAllConst2Values);
+    }
+    if (elements.const2ClearAll) {
+        elements.const2ClearAll.addEventListener('click', clearAllConst2Values);
+    }
+
     // Close dropdown when clicking outside
     document.addEventListener('click', (e) => {
         if (!e.target.closest('.multi-select-container') && !e.target.closest('.multi-select-dropdown')) {
             elements.constValueDropdown.style.display = 'none';
+            if (elements.constValue2Dropdown) {
+                elements.constValue2Dropdown.style.display = 'none';
+            }
         }
     });
 
@@ -1014,6 +1046,49 @@ function populateHeatmapSelectors(strategyParams) {
     strategyParams.forEach(p => {
         elements.heatmapConstParam.innerHTML += `<option value="${p}">${p}</option>`;
     });
+
+    // Constant param2 dropdown (for 4D mode)
+    if (elements.heatmapConstParam2) {
+        elements.heatmapConstParam2.innerHTML = '<option value="">None</option>';
+        strategyParams.forEach(p => {
+            elements.heatmapConstParam2.innerHTML += `<option value="${p}">${p}</option>`;
+        });
+    }
+
+    // Show/hide param groups based on number of strategy params
+    updateHeatmapParamVisibility(strategyParams.length);
+
+    // Set defaults for const params if available
+    if (strategyParams.length >= 3) {
+        elements.heatmapConstParam.value = strategyParams[2];
+    }
+    if (strategyParams.length >= 4 && elements.heatmapConstParam2) {
+        elements.heatmapConstParam2.value = strategyParams[3];
+    }
+}
+
+function updateHeatmapParamVisibility(numParams) {
+    // Get elements directly to ensure we have current references (fallback if cached elements are null)
+    const constParam1Group = elements.constParam1Group || document.getElementById('const-param1-group');
+    const constParam2Group = elements.constParam2Group || document.getElementById('const-param2-group');
+
+    // Update cache if elements were fetched via fallback
+    if (!elements.constParam1Group && constParam1Group) {
+        elements.constParam1Group = constParam1Group;
+    }
+    if (!elements.constParam2Group && constParam2Group) {
+        elements.constParam2Group = constParam2Group;
+    }
+
+    // Show const1 only if 3+ params (use 'flex' to match .config-group CSS)
+    if (constParam1Group) {
+        constParam1Group.style.display = numParams >= 3 ? 'flex' : 'none';
+    }
+
+    // Show const2 only if 4 params
+    if (constParam2Group) {
+        constParam2Group.style.display = numParams >= 4 ? 'flex' : 'none';
+    }
 }
 
 // ==================== Step 2: Heatmaps ====================
@@ -1082,7 +1157,9 @@ async function generateHeatmaps() {
         showLoading('Generating all heatmaps...');
 
         const constParam = elements.heatmapConstParam.value || null;
+        const constParam2 = (elements.heatmapConstParam2 && elements.heatmapConstParam2.value) || null;
         state.heatmapConstParam = constParam;
+        state.heatmapConstParam2 = constParam2;
 
         // Store heatmap params for report generation
         state.heatmapXParam = elements.heatmapXParam.value;
@@ -1094,6 +1171,8 @@ async function generateHeatmaps() {
             y_param: elements.heatmapYParam.value,
             const_param: constParam,
             const_values: null,  // Generate for ALL values
+            const_param2: constParam2,
+            const_values2: null,  // Generate for ALL values
             metrics: null,       // Generate for ALL metrics
             show_shortlisted: elements.showShortlisted.checked && state.shortlistApplied
         };
@@ -1132,12 +1211,14 @@ function extractHeatmapMetadata(heatmaps) {
     // Extract unique metrics and const values from heatmap metadata
     const metrics = new Set();
     const constValues = new Set();
+    const constValues2 = new Set();
 
     heatmaps.forEach(hm => {
         // Use metadata if available (from backend)
         if (hm._metadata) {
             if (hm._metadata.metric) metrics.add(hm._metadata.metric);
             if (hm._metadata.const_value) constValues.add(hm._metadata.const_value);
+            if (hm._metadata.const_value2) constValues2.add(hm._metadata.const_value2);
         } else {
             // Fallback: parse from title
             if (hm.layout && hm.layout.title) {
@@ -1161,6 +1242,12 @@ function extractHeatmapMetadata(heatmaps) {
         if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
         return a.localeCompare(b);
     });
+    state.heatmapConstValues2 = Array.from(constValues2).sort((a, b) => {
+        const numA = parseFloat(a);
+        const numB = parseFloat(b);
+        if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+        return a.localeCompare(b);
+    });
 }
 
 function populateNavigationDropdowns() {
@@ -1178,6 +1265,16 @@ function populateNavigationDropdowns() {
         updateConstValueDisplay();
     } else {
         elements.navConstValueGroup.style.display = 'none';
+    }
+
+    // Populate const2 value multi-select (only if const_param2 was used - 4D mode)
+    if (state.heatmapConstParam2 && state.heatmapConstValues2.length > 0 && elements.navConstValue2Group) {
+        elements.navConstValue2Group.style.display = 'flex';
+        state.selectedConstValues2 = []; // Start with all selected (empty means all)
+        populateConst2ValueOptions();
+        updateConst2ValueDisplay();
+    } else if (elements.navConstValue2Group) {
+        elements.navConstValue2Group.style.display = 'none';
     }
 }
 
@@ -1261,6 +1358,93 @@ function updateConstValueDisplay() {
     }
 }
 
+// ==================== Const2 Value Filter Functions (4D Mode) ====================
+
+function populateConst2ValueOptions() {
+    if (!elements.constValue2Options) return;
+
+    elements.constValue2Options.innerHTML = '';
+    state.heatmapConstValues2.forEach(val => {
+        const option = document.createElement('div');
+        option.className = 'multi-select-option';
+        option.dataset.value = val;
+        option.innerHTML = `<input type="checkbox" checked> <span>${val}</span>`;
+
+        option.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const checkbox = option.querySelector('input[type="checkbox"]');
+            if (e.target !== checkbox) {
+                checkbox.checked = !checkbox.checked;
+            }
+            toggleConst2Value(val, checkbox.checked);
+        });
+
+        elements.constValue2Options.appendChild(option);
+    });
+}
+
+function toggleConst2ValueDropdown(e) {
+    e.stopPropagation();
+    if (!elements.constValue2Dropdown) return;
+    const isVisible = elements.constValue2Dropdown.style.display === 'block';
+    elements.constValue2Dropdown.style.display = isVisible ? 'none' : 'block';
+}
+
+function toggleConst2Value(val, isSelected) {
+    if (isSelected) {
+        // Remove from selected (deselected list)
+        state.selectedConstValues2 = state.selectedConstValues2.filter(v => v !== val);
+    } else {
+        // Add to deselected list
+        if (!state.selectedConstValues2.includes(val)) {
+            state.selectedConstValues2.push(val);
+        }
+    }
+    updateConst2ValueDisplay();
+    filterHeatmaps();
+}
+
+function selectAllConst2Values() {
+    state.selectedConstValues2 = [];
+    if (elements.constValue2Options) {
+        elements.constValue2Options.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.checked = true;
+        });
+    }
+    updateConst2ValueDisplay();
+    filterHeatmaps();
+}
+
+function clearAllConst2Values() {
+    state.selectedConstValues2 = [...state.heatmapConstValues2];
+    if (elements.constValue2Options) {
+        elements.constValue2Options.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+            cb.checked = false;
+        });
+    }
+    updateConst2ValueDisplay();
+    filterHeatmaps();
+}
+
+function updateConst2ValueDisplay() {
+    if (!elements.constValue2Display) return;
+
+    const total = state.heatmapConstValues2.length;
+    const deselectedCount = state.selectedConstValues2.length;
+    const selectedCount = total - deselectedCount;
+
+    if (selectedCount === 0) {
+        elements.constValue2Display.textContent = 'None selected';
+    } else if (selectedCount === total) {
+        elements.constValue2Display.textContent = 'All Values';
+    } else if (selectedCount <= 2) {
+        const selected = state.heatmapConstValues2.filter(v => !state.selectedConstValues2.includes(v));
+        elements.constValue2Display.textContent = selected.join(', ');
+    } else {
+        elements.constValue2Display.textContent = `${selectedCount} selected`;
+    }
+}
+
 function filterHeatmaps() {
     const selectedMetric = elements.navMetric.value;
 
@@ -1268,10 +1452,12 @@ function filterHeatmaps() {
     state.filteredHeatmaps = state.heatmaps.filter(hm => {
         let matchesMetric = true;
         let matchesConstValue = true;
+        let matchesConstValue2 = true;
 
         // Use metadata if available
         const hmMetric = hm._metadata ? hm._metadata.metric : null;
         const hmConstValue = hm._metadata ? hm._metadata.const_value : null;
+        const hmConstValue2 = hm._metadata ? hm._metadata.const_value2 : null;
 
         // Filter by metric
         if (selectedMetric) {
@@ -1285,7 +1471,12 @@ function filterHeatmaps() {
             matchesConstValue = !state.selectedConstValues.includes(hmConstValue);
         }
 
-        return matchesMetric && matchesConstValue;
+        // Filter by const2 values (4D mode)
+        if (state.selectedConstValues2.length > 0 && hmConstValue2) {
+            matchesConstValue2 = !state.selectedConstValues2.includes(hmConstValue2);
+        }
+
+        return matchesMetric && matchesConstValue && matchesConstValue2;
     });
 
     // Reset index and display
@@ -1519,13 +1710,16 @@ async function runStep4() {
     try {
         showLoading('Running K-Means...');
         const kValue = elements.kmeansK.value ? parseInt(elements.kmeansK.value) : null;
-        const result = await apiCall('/steps/kmeans', 'POST', { session_id: state.sessionId, k: kValue });
+        const result = await apiCall('/steps/kmeans', 'POST', {
+            session_id: state.sessionId,
+            k: kValue
+        });
 
         // Store K-Means K value for report generation
         state.kmeansK = result.k_used;
 
         document.getElementById('step4-k-used').textContent = result.k_used;
-        document.getElementById('step4-filtered-count').textContent = result.num_variants_in_best_kmeans;
+        document.getElementById('step4-total-variants').textContent = result.total_variants;
         renderChart(document.getElementById('kmeans-scatter-chart'), result.kmeans_scatter);
 
         // Store all cluster stats for metric switching
@@ -1564,11 +1758,13 @@ function renderKMeansStatsTable(metric) {
 async function runStep5() {
     try {
         showLoading('Running HDBSCAN grid...');
+        const numBestForHdbscan = elements.hdbscanNumBest ? parseInt(elements.hdbscanNumBest.value) || 1 : 1;
         const minSizes = elements.hdbscanMinSizes.value.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
         const minSamples = elements.hdbscanMinSamples.value.split(',').map(v => parseInt(v.trim())).filter(v => !isNaN(v));
 
         const request = {
             session_id: state.sessionId,
+            num_best_for_hdbscan: numBestForHdbscan,
             grid_config: {
                 min_cluster_sizes: minSizes,
                 min_sample_sizes: minSamples,
@@ -1579,11 +1775,26 @@ async function runStep5() {
 
         const result = await apiCall('/steps/hdbscan-grid', 'POST', request);
         state.availableConfigs = result.available_configs;
+        state.numBestForHdbscan = result.num_best_clusters_selected;
+
+        // Display K-Means filter summary
+        document.getElementById('step5-best-clusters').textContent = result.num_best_clusters_selected;
+        document.getElementById('step5-cluster-ids').textContent =
+            result.best_kmeans_cluster_ids.length > 0
+                ? result.best_kmeans_cluster_ids.join(', ')
+                : '-';
+        document.getElementById('step5-filtered-count').textContent = result.num_variants_filtered;
 
         renderChart(document.getElementById('hdbscan-grid-chart'), result.hdbscan_grid_chart);
         renderChart(document.getElementById('hdbscan-core-grid-chart'), result.hdbscan_core_grid_chart);
         renderConfigResults(result.config_results);
         populateStep6Dropdowns(result.available_configs);
+
+        // Set Step 6 threshold to same value used in Grid
+        if (elements.finalThreshold) {
+            elements.finalThreshold.value = elements.hdbscanThreshold.value;
+        }
+
         elements.step5Results.style.display = 'block';
     } catch (error) {
         alert(`Error: ${error.message}`);
@@ -1597,15 +1808,18 @@ async function runStep6() {
         showLoading('Running final HDBSCAN...');
         const minClusterSize = parseInt(elements.finalMinClusterSize.value);
         const minSamples = parseInt(elements.finalMinSamples.value);
+        const thresholdProb = parseFloat(elements.finalThreshold.value) || 0.9;
 
         // Store HDBSCAN params for report generation
         state.hdbscanMinSize = minClusterSize;
         state.hdbscanMinSamples = minSamples;
+        state.hdbscanThreshold = thresholdProb;
 
         const request = {
             session_id: state.sessionId,
             min_cluster_size: minClusterSize,
             min_samples: minSamples,
+            threshold_cluster_prob: thresholdProb,
             ranking_metric: elements.rankingMetric.value
         };
 
@@ -1748,11 +1962,13 @@ function renderBestClusters(result) {
         const coreHeatmaps = (result.final_core_heatmaps && result.final_core_heatmaps[idx]) || [];
         const clusterData = result.best_clusters_data[idx] || [];
         const constValues = (result.cluster_const_values && result.cluster_const_values[idx]) || [];
+        const constValues2 = (result.cluster_const_values2 && result.cluster_const_values2[idx]) || [];
         const coreCount = (result.cluster_core_counts && result.cluster_core_counts[idx]) || 0;
 
         // Extract unique metrics from heatmap metadata
         const metrics = new Set();
         const constValuesFromHeatmaps = new Set();
+        const constValues2FromHeatmaps = new Set();
         heatmaps.forEach(hm => {
             if (hm._metadata && hm._metadata.metric) {
                 metrics.add(hm._metadata.metric);
@@ -1760,9 +1976,18 @@ function renderBestClusters(result) {
             if (hm._metadata && hm._metadata.const_value) {
                 constValuesFromHeatmaps.add(hm._metadata.const_value);
             }
+            if (hm._metadata && hm._metadata.const_value2) {
+                constValues2FromHeatmaps.add(hm._metadata.const_value2);
+            }
         });
         const metricsList = Array.from(metrics);
         const constValuesList = Array.from(constValuesFromHeatmaps).sort((a, b) => {
+            const numA = parseFloat(a);
+            const numB = parseFloat(b);
+            if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
+            return String(a).localeCompare(String(b));
+        });
+        const constValues2List = Array.from(constValues2FromHeatmaps).sort((a, b) => {
             const numA = parseFloat(a);
             const numB = parseFloat(b);
             if (!isNaN(numA) && !isNaN(numB)) return numA - numB;
@@ -1781,8 +2006,15 @@ function renderBestClusters(result) {
             constValueOptions += `<option value="${v}">${v}</option>`;
         });
 
+        // Build const2 value dropdown options
+        let constValue2Options = '<option value="">All Values</option>';
+        constValues2List.forEach(v => {
+            constValue2Options += `<option value="${v}">${v}</option>`;
+        });
+
         // Check if we have const values to show
         const showConstFilter = constValuesList.length > 0;
+        const showConst2Filter = constValues2List.length > 0;
 
         // Check if we have core heatmaps available
         const hasCoreHeatmaps = coreHeatmaps.length > 0;
@@ -1793,7 +2025,8 @@ function renderBestClusters(result) {
                 <span class="info-badge">${clusterData.length} variants</span>
                 <span class="info-badge">${coreCount} core points</span>
                 <span class="info-badge">${heatmaps.length} heatmaps</span>
-                ${constValues.length > 0 ? `<span class="info-badge">Const values: ${constValues.join(', ')}</span>` : ''}
+                ${constValues.length > 0 ? `<span class="info-badge">Const1: ${constValues.join(', ')}</span>` : ''}
+                ${constValues2.length > 0 ? `<span class="info-badge">Const2: ${constValues2.join(', ')}</span>` : ''}
             </div>
             <div class="cluster-heatmap-controls">
                 <div class="cluster-filter-row">
@@ -1814,9 +2047,17 @@ function renderBestClusters(result) {
                     </div>
                     ${showConstFilter ? `
                     <div class="cluster-const-filter">
-                        <label>Const Value:</label>
+                        <label>Const 1:</label>
                         <select class="cluster-const-select" data-cluster="${idx}">
                             ${constValueOptions}
+                        </select>
+                    </div>
+                    ` : ''}
+                    ${showConst2Filter ? `
+                    <div class="cluster-const2-filter">
+                        <label>Const 2:</label>
+                        <select class="cluster-const2-select" data-cluster="${idx}">
+                            ${constValue2Options}
                         </select>
                     </div>
                     ` : ''}
@@ -1851,18 +2092,21 @@ function renderBestClusters(result) {
         }
     });
 
-    // Combined filter function for both metric and const value
+    // Combined filter function for metric, const value, and const2 value
     function applyClusterFilters(section, idx) {
         const metricSelect = section.querySelector('.cluster-metric-select');
         const constSelect = section.querySelector('.cluster-const-select');
+        const const2Select = section.querySelector('.cluster-const2-select');
 
         const selectedMetric = metricSelect ? metricSelect.value : '';
         const selectedConstValue = constSelect ? constSelect.value : '';
+        const selectedConstValue2 = const2Select ? const2Select.value : '';
 
         // Filter both all heatmaps and core heatmaps by the same criteria
         const filterFn = (hm) => {
             let matchesMetric = true;
             let matchesConstValue = true;
+            let matchesConstValue2 = true;
 
             if (selectedMetric && hm._metadata) {
                 matchesMetric = hm._metadata.metric === selectedMetric;
@@ -1870,8 +2114,11 @@ function renderBestClusters(result) {
             if (selectedConstValue && hm._metadata) {
                 matchesConstValue = hm._metadata.const_value === selectedConstValue;
             }
+            if (selectedConstValue2 && hm._metadata) {
+                matchesConstValue2 = hm._metadata.const_value2 === selectedConstValue2;
+            }
 
-            return matchesMetric && matchesConstValue;
+            return matchesMetric && matchesConstValue && matchesConstValue2;
         };
 
         section._filteredHeatmaps = section._allHeatmaps.filter(filterFn);
@@ -1957,6 +2204,15 @@ function renderBestClusters(result) {
         });
     });
 
+    // Const2 value filter handlers (4D mode)
+    container.querySelectorAll('.cluster-const2-select').forEach(select => {
+        select.addEventListener('change', function() {
+            const idx = parseInt(this.dataset.cluster);
+            const section = this.closest('.cluster-section');
+            applyClusterFilters(section, idx);
+        });
+    });
+
     // Navigation handlers
     container.querySelectorAll('.prev-cluster-heatmap').forEach(btn => {
         btn.addEventListener('click', function() {
@@ -2022,6 +2278,18 @@ function populateReportForm() {
     } else {
         elements.reportConstParam.value = '';
     }
+    // Set const_param2 if available (4D mode)
+    if (state.heatmapConstParam2 && elements.reportConstParam2) {
+        elements.reportConstParam2.value = state.heatmapConstParam2;
+        if (elements.reportConstParam2Group) {
+            elements.reportConstParam2Group.style.display = 'block';
+        }
+    } else if (elements.reportConstParam2) {
+        elements.reportConstParam2.value = '';
+        if (elements.reportConstParam2Group) {
+            elements.reportConstParam2Group.style.display = 'none';
+        }
+    }
 
     // Shortlist checkbox
     elements.reportShortlistEnabled.checked = state.shortlistApplied;
@@ -2068,6 +2336,12 @@ function populateReportParamSelectors() {
     // Const param dropdown (with None option)
     elements.reportConstParam.innerHTML = '<option value="">None</option>' +
         params.map(p => `<option value="${p}">${p}</option>`).join('');
+
+    // Const param2 dropdown (with None option)
+    if (elements.reportConstParam2) {
+        elements.reportConstParam2.innerHTML = '<option value="">None</option>' +
+            params.map(p => `<option value="${p}">${p}</option>`).join('');
+    }
 }
 
 function addReportShortlistCondition(metric = 'sharpe_ratio', operator = '>', value = 0) {
@@ -2127,6 +2401,7 @@ async function generateReport() {
         const xParam = elements.reportXParam.value;
         const yParam = elements.reportYParam.value;
         const constParam = elements.reportConstParam.value || null;
+        const constParam2 = (elements.reportConstParam2 && elements.reportConstParam2.value) || null;
         const shortlistEnabled = elements.reportShortlistEnabled.checked;
         const shortlistConditions = getReportShortlistConditions();
         const kmeansK = elements.reportKmeansK.value ? parseInt(elements.reportKmeansK.value) : null;
@@ -2145,6 +2420,7 @@ async function generateReport() {
             x_param: xParam,
             y_param: yParam,
             const_param: constParam,
+            const_param2: constParam2,
             shortlist_enabled: shortlistEnabled,
             shortlist_conditions: shortlistConditions.map(c => ({
                 metric: c.metric,

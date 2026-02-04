@@ -97,8 +97,8 @@ async def generate_preview(request: GeneratorPreviewRequest):
         df = generate_combinations(
             request.parameters,
             request.dependencies,
-            request.name_default,
-            request.name_position
+            request.name_prefix,
+            request.name_postfix
         )
 
         total = len(df)
@@ -134,8 +134,8 @@ async def generate_csv(request: GeneratorGenerateRequest):
         df = generate_combinations(
             request.parameters,
             request.dependencies,
-            request.name_default,
-            request.name_position
+            request.name_prefix,
+            request.name_postfix
         )
 
         total = len(df)
