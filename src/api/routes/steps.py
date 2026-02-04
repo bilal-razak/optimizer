@@ -239,6 +239,12 @@ async def step_heatmap(request: StepHeatmapRequest) -> StepHeatmapResponse:
                 df_for_heatmap[request.const_param].isin(request.const_values)
             ]
 
+        # Filter by const_values2 if specified (4D mode)
+        if request.const_param2 and request.const_values2:
+            df_for_heatmap = df_for_heatmap[
+                df_for_heatmap[request.const_param2].isin(request.const_values2)
+            ]
+
         # Determine which metrics to show
         available_metrics = [col for col, _, _ in HEATMAP_METRICS if col in df_for_heatmap.columns]
         if request.metrics:
@@ -259,7 +265,7 @@ async def step_heatmap(request: StepHeatmapRequest) -> StepHeatmapResponse:
             x_param=request.x_param,
             y_param=request.y_param,
             const_param1=request.const_param,
-            const_param2=None,
+            const_param2=request.const_param2,
             metrics=metrics_tuples if metrics_tuples else None,
             highlight_col=highlight_col,
             highlight_val=highlight_val
@@ -270,7 +276,7 @@ async def step_heatmap(request: StepHeatmapRequest) -> StepHeatmapResponse:
             "x_param": request.x_param,
             "y_param": request.y_param,
             "const_param1": request.const_param,
-            "const_param2": None
+            "const_param2": request.const_param2
         }
 
         return StepHeatmapResponse(
@@ -280,6 +286,7 @@ async def step_heatmap(request: StepHeatmapRequest) -> StepHeatmapResponse:
             x_param=request.x_param,
             y_param=request.y_param,
             const_param=request.const_param,
+            const_param2=request.const_param2,
             metrics_shown=metrics_to_show
         )
 
@@ -472,25 +479,12 @@ async def step_kmeans(request: StepKMeansRequest) -> StepKMeansResponse:
         ranking_metric = 'sharpe_ratio'
         if ranking_metric in kmeans_df.columns:
             kmeans_cluster_stats = all_stats.get(ranking_metric, [])
-
-            # Get best K-Means cluster and filter (always based on sharpe)
-            sharpe_stats = compute_cluster_stats(
-                kmeans_df,
-                ranking_metric,
-                cluster_col='kmeans_cluster',
-                threshold_prob=0.0
-            )
-            sharpe_stats = sharpe_stats.sort_values('mean', ascending=False)
-            best_kmeans_clusters = get_best_clusters(sharpe_stats, num_clusters=1)
-            mask = kmeans_df['kmeans_cluster'].isin(best_kmeans_clusters)
-            session["kmeans_filtered_df"] = kmeans_df[mask].copy()
-            session["filtered_X_df"] = X_df.loc[session["kmeans_filtered_df"].index]
         else:
             kmeans_cluster_stats = []
-            session["kmeans_filtered_df"] = kmeans_df.copy()
-            session["filtered_X_df"] = X_df
 
-        # Store all stats for later retrieval by metric
+        # Store K-Means results (filtering happens in HDBSCAN Grid step)
+        session["kmeans_df"] = kmeans_df.copy()
+        session["kmeans_X_df"] = X_df.copy()
         session["kmeans_all_stats"] = all_stats
 
         return StepKMeansResponse(
@@ -498,7 +492,7 @@ async def step_kmeans(request: StepKMeansRequest) -> StepKMeansResponse:
             kmeans_scatter=kmeans_scatter,
             kmeans_cluster_stats=kmeans_cluster_stats,
             k_used=k,
-            num_variants_in_best_kmeans=len(session["kmeans_filtered_df"]),
+            total_variants=len(kmeans_df),
             all_cluster_stats=all_stats
         )
 
@@ -519,19 +513,47 @@ async def step_hdbscan_grid(request: StepHDBSCANGridRequest) -> StepHDBSCANGridR
     """
     session = get_session(request.session_id)
 
-    if session["kmeans_filtered_df"] is None:
+    if session.get("kmeans_df") is None:
         raise HTTPException(
             status_code=400,
             detail="Step 4 (K-Means) must be completed first"
         )
 
     try:
-        filtered_X_df = session["filtered_X_df"]
+        kmeans_df = session["kmeans_df"]
+        X_df = session["kmeans_X_df"]
+        strategy_params = session["strategy_params"]
+        ranking_metric = request.ranking_metric.value
+
+        # Filter best K-Means clusters for HDBSCAN
+        num_best = request.num_best_for_hdbscan
+        best_kmeans_clusters = []
+
+        if ranking_metric in kmeans_df.columns:
+            sharpe_stats = compute_cluster_stats(
+                kmeans_df,
+                ranking_metric,
+                cluster_col='kmeans_cluster',
+                threshold_prob=0.0
+            )
+            sharpe_stats = sharpe_stats.sort_values('mean', ascending=False)
+            best_kmeans_clusters = get_best_clusters(sharpe_stats, num_clusters=num_best)
+            mask = kmeans_df['kmeans_cluster'].isin(best_kmeans_clusters)
+            filtered_kmeans_df = kmeans_df[mask].copy()
+            filtered_X_df = X_df.loc[filtered_kmeans_df.index]
+        else:
+            filtered_kmeans_df = kmeans_df.copy()
+            filtered_X_df = X_df.copy()
+
+        # Store filtered data for HDBSCAN Final step
+        session["kmeans_filtered_df"] = filtered_kmeans_df
+        session["filtered_X_df"] = filtered_X_df
+        session["num_best_for_hdbscan"] = num_best
+        session["best_kmeans_cluster_ids"] = best_kmeans_clusters
+
         filtered_params = session["params"].loc[filtered_X_df.index]
         filtered_metrics = session["metrics"].loc[filtered_X_df.index]
         filtered_pca = session["pca_df"].loc[filtered_X_df.index]
-        strategy_params = session["strategy_params"]
-        ranking_metric = request.ranking_metric.value
 
         grid_config = request.grid_config
         min_cluster_sizes = grid_config.min_cluster_sizes
@@ -620,7 +642,10 @@ async def step_hdbscan_grid(request: StepHDBSCANGridRequest) -> StepHDBSCANGridR
             hdbscan_grid_chart=hdbscan_grid_chart,
             hdbscan_core_grid_chart=hdbscan_core_grid_chart,
             config_results=config_results,
-            available_configs=[[c[0], c[1]] for c in configs]
+            available_configs=[[c[0], c[1]] for c in configs],
+            num_best_clusters_selected=len(best_kmeans_clusters),
+            best_kmeans_cluster_ids=best_kmeans_clusters,
+            num_variants_filtered=len(filtered_X_df)
         )
 
     except Exception as e:
@@ -679,8 +704,9 @@ async def step_hdbscan_final(request: StepHDBSCANFinalRequest) -> StepHDBSCANFin
             metrics_cols=metrics_cols
         )
 
-        # Generate scatter plot for CORE points only (default threshold 0.95)
-        threshold_prob = 0.95
+        # Generate scatter plot for CORE points only
+        threshold_prob = request.threshold_cluster_prob
+        session["hdbscan_threshold_prob"] = threshold_prob
         core_df = hdbscan_df[
             (hdbscan_df['cluster'] != -1) &
             (hdbscan_df['cluster_probability'] >= threshold_prob)
@@ -785,7 +811,8 @@ async def step_best_clusters(request: StepBestClustersRequest) -> StepBestCluste
         final_heatmaps = []
         final_core_heatmaps = []
         best_clusters_data = []
-        cluster_const_values = []  # Store const values for each cluster
+        cluster_const_values = []  # Store const param1 values for each cluster
+        cluster_const_values2 = []  # Store const param2 values for each cluster
         cluster_core_counts = []  # Store core point counts
 
         # Core probability threshold
@@ -803,7 +830,7 @@ async def step_best_clusters(request: StepBestClustersRequest) -> StepBestCluste
             core_variants = hdbscan_df[core_mask].index.tolist()
             cluster_core_counts.append(len(core_variants))
 
-            # Get unique const param values that exist in this cluster
+            # Get unique const param1 values that exist in this cluster
             const_param = hp.get("const_param1")
             const_vals_in_cluster = []
             if const_param and const_param in full_results.columns:
@@ -812,11 +839,21 @@ async def step_best_clusters(request: StepBestClustersRequest) -> StepBestCluste
 
             cluster_const_values.append(const_vals_in_cluster)
 
+            # Get unique const param2 values that exist in this cluster (4D mode)
+            const_param2 = hp.get("const_param2")
+            const_vals2_in_cluster = []
+            if const_param2 and const_param2 in full_results.columns:
+                cluster_mask = full_results['variant_id'].isin(cluster_variants)
+                const_vals2_in_cluster = sorted(full_results.loc[cluster_mask, const_param2].unique().tolist())
+
+            cluster_const_values2.append(const_vals2_in_cluster)
+
             # Filter full_results to only include rows with const values present in this cluster
+            df_for_heatmap = full_results.copy()
             if const_param and const_vals_in_cluster:
-                df_for_heatmap = full_results[full_results[const_param].isin(const_vals_in_cluster)].copy()
-            else:
-                df_for_heatmap = full_results.copy()
+                df_for_heatmap = df_for_heatmap[df_for_heatmap[const_param].isin(const_vals_in_cluster)]
+            if const_param2 and const_vals2_in_cluster:
+                df_for_heatmap = df_for_heatmap[df_for_heatmap[const_param2].isin(const_vals2_in_cluster)]
 
             # Generate heatmaps with ALL cluster variants highlighted
             heatmaps = generate_heatmaps(
@@ -862,6 +899,7 @@ async def step_best_clusters(request: StepBestClustersRequest) -> StepBestCluste
             best_clusters_data=best_clusters_data,
             best_cluster_ids=best_cluster_ids,
             cluster_const_values=cluster_const_values,
+            cluster_const_values2=cluster_const_values2,
             cluster_core_counts=cluster_core_counts
         )
 
@@ -967,7 +1005,7 @@ async def step_generate_report(request: StepGenerateReportRequest):
             x_param=request.x_param,
             y_param=request.y_param,
             const_param1=request.const_param,
-            const_param2=None,
+            const_param2=request.const_param2,
             metrics=sharpe_metric
         )
 
@@ -981,7 +1019,7 @@ async def step_generate_report(request: StepGenerateReportRequest):
                 x_param=request.x_param,
                 y_param=request.y_param,
                 const_param1=request.const_param,
-                const_param2=None,
+                const_param2=request.const_param2,
                 metrics=sharpe_metric,
                 highlight_col='_shortlisted',
                 highlight_val=1
@@ -1141,7 +1179,8 @@ async def step_generate_report(request: StepGenerateReportRequest):
         hp = session.get("heatmap_params", {
             "x_param": request.x_param,
             "y_param": request.y_param,
-            "const_param1": request.const_param
+            "const_param1": request.const_param,
+            "const_param2": request.const_param2
         })
 
         # Generate best cluster heatmaps and scatter plots
@@ -1185,7 +1224,7 @@ async def step_generate_report(request: StepGenerateReportRequest):
                 x_param=hp.get("x_param", request.x_param),
                 y_param=hp.get("y_param", request.y_param),
                 const_param1=const_param,
-                const_param2=None,
+                const_param2=hp.get("const_param2") or request.const_param2,
                 metrics=sharpe_metric,
                 highlight_col='cluster',
                 highlight_val=cluster_id

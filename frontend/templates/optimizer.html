@@ -197,7 +197,7 @@
             <!-- Heatmap Generation Configuration -->
             <div class="config-section">
                 <h4>Heatmap Generation</h4>
-                <p class="hint">Select the parameters to use for X-axis, Y-axis, and optionally a constant parameter (3rd dimension).</p>
+                <p class="hint">Select the parameters to use for X-axis, Y-axis, and optionally constant parameters for 3D or 4D heatmaps.</p>
                 <div class="heatmap-config-grid">
                     <div class="config-group">
                         <label for="heatmap-x-param">X-Axis Parameter</label>
@@ -207,10 +207,16 @@
                         <label for="heatmap-y-param">Y-Axis Parameter</label>
                         <select id="heatmap-y-param"></select>
                     </div>
-                    <div class="config-group">
-                        <label for="heatmap-const-param">Constant Parameter (optional)</label>
+                    <div class="config-group" id="const-param1-group" style="display: none;">
+                        <label for="heatmap-const-param">Constant Parameter 1</label>
                         <select id="heatmap-const-param">
                             <option value="">None - Single heatmap per metric</option>
+                        </select>
+                    </div>
+                    <div class="config-group" id="const-param2-group" style="display: none;">
+                        <label for="heatmap-const-param2">Constant Parameter 2</label>
+                        <select id="heatmap-const-param2">
+                            <option value="">None</option>
                         </select>
                     </div>
                 </div>
@@ -242,7 +248,7 @@
                             </select>
                         </div>
                         <div class="nav-filter-group nav-filter-group-multi" id="nav-const-value-group" style="display: none;">
-                            <label>Const Values:</label>
+                            <label>Const 1:</label>
                             <div class="multi-select-container">
                                 <div class="multi-select-toggle" id="const-value-toggle">
                                     <span id="const-value-display">All Values</span>
@@ -253,6 +259,22 @@
                                     <div class="multi-select-actions">
                                         <button type="button" class="btn btn-small" id="const-select-all">Select All</button>
                                         <button type="button" class="btn btn-small" id="const-clear-all">Clear</button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="nav-filter-group nav-filter-group-multi" id="nav-const-value2-group" style="display: none;">
+                            <label>Const 2:</label>
+                            <div class="multi-select-container">
+                                <div class="multi-select-toggle" id="const-value2-toggle">
+                                    <span id="const-value2-display">All Values</span>
+                                    <span class="dropdown-arrow">&#9662;</span>
+                                </div>
+                                <div class="multi-select-dropdown" id="const-value2-dropdown" style="display: none;">
+                                    <div class="multi-select-options" id="const-value2-options"></div>
+                                    <div class="multi-select-actions">
+                                        <button type="button" class="btn btn-small" id="const2-select-all">Select All</button>
+                                        <button type="button" class="btn btn-small" id="const2-clear-all">Clear</button>
                                     </div>
                                 </div>
                             </div>
@@ -311,11 +333,13 @@
             </div>
 
             <div class="config-section">
-                <div class="config-group">
-                    <label for="kmeans-k">Number of Clusters (k)</label>
-                    <div class="input-with-hint">
-                        <input type="number" id="kmeans-k" placeholder="Auto" min="2">
-                        <span class="hint">Leave empty for auto-calculation</span>
+                <div class="heatmap-config-grid">
+                    <div class="config-group">
+                        <label for="kmeans-k">Number of Clusters (k)</label>
+                        <div class="input-with-hint">
+                            <input type="number" id="kmeans-k" placeholder="Auto" min="2">
+                            <span class="hint">Leave empty for auto-calculation</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -332,8 +356,8 @@
                         <span class="summary-label">K Used</span>
                     </div>
                     <div class="summary-card">
-                        <span class="summary-value" id="step4-filtered-count">-</span>
-                        <span class="summary-label">Best Cluster Size</span>
+                        <span class="summary-value" id="step4-total-variants">-</span>
+                        <span class="summary-label">Total Variants</span>
                     </div>
                 </div>
                 <div class="kmeans-scatter-section">
@@ -373,6 +397,13 @@
             <div class="config-section">
                 <div class="heatmap-config-grid">
                     <div class="config-group">
+                        <label for="hdbscan-num-best">Best K-Means Clusters</label>
+                        <div class="input-with-hint">
+                            <input type="number" id="hdbscan-num-best" value="1" min="1">
+                            <span class="hint">Number of top K-Means clusters to filter for HDBSCAN</span>
+                        </div>
+                    </div>
+                    <div class="config-group">
                         <label>Min Cluster Sizes</label>
                         <input type="text" id="hdbscan-min-sizes" value="3, 5, 10, 15, 20" placeholder="Comma-separated">
                     </div>
@@ -400,6 +431,21 @@
             </button>
 
             <div id="step5-results" class="step-results" style="display: none;">
+                <h3>K-Means Filter Summary</h3>
+                <div class="summary-cards">
+                    <div class="summary-card">
+                        <span class="summary-value" id="step5-best-clusters">-</span>
+                        <span class="summary-label">Best Clusters Selected</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-value" id="step5-cluster-ids">-</span>
+                        <span class="summary-label">Cluster IDs</span>
+                    </div>
+                    <div class="summary-card">
+                        <span class="summary-value" id="step5-filtered-count">-</span>
+                        <span class="summary-label">Variants for HDBSCAN</span>
+                    </div>
+                </div>
                 <h3>HDBSCAN Configuration Comparison</h3>
                 <div class="tabs">
                     <button class="tab active" data-tab="hdbscan-all">All Points</button>
@@ -438,6 +484,10 @@
                     <div class="config-group">
                         <label for="final-min-samples">Min Samples</label>
                         <select id="final-min-samples"></select>
+                    </div>
+                    <div class="config-group">
+                        <label for="final-threshold">Core Probability Threshold</label>
+                        <input type="number" id="final-threshold" value="0.9" min="0" max="1" step="0.05">
                     </div>
                 </div>
             </div>
@@ -560,8 +610,14 @@
                             <select id="report-y-param"></select>
                         </div>
                         <div class="config-item">
-                            <label>Constant Param:</label>
+                            <label>Constant Param 1:</label>
                             <select id="report-const-param">
+                                <option value="">None</option>
+                            </select>
+                        </div>
+                        <div class="config-item" id="report-const-param2-group" style="display: none;">
+                            <label>Constant Param 2:</label>
+                            <select id="report-const-param2">
                                 <option value="">None</option>
                             </select>
                         </div>

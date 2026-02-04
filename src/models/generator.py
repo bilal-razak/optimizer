@@ -39,13 +39,13 @@ class GeneratorRequest(BaseModel):
         default_factory=list,
         description="List of dependencies between parameters"
     )
-    name_default: str = Field(
-        default="Strategy",
-        description="Default part of the __name__ column"
+    name_prefix: str = Field(
+        default="",
+        description="Prefix for the __name__ column (prepended to indicator groups)"
     )
-    name_position: Literal["prefix", "postfix"] = Field(
-        default="prefix",
-        description="Position of the default name (prefix or postfix)"
+    name_postfix: str = Field(
+        default="",
+        description="Postfix for the __name__ column (appended after indicator groups)"
     )
 
 
@@ -86,13 +86,13 @@ class GeneratorPreviewRequest(BaseModel):
         default_factory=list,
         description="List of dependencies between parameters"
     )
-    name_default: str = Field(
-        default="Strategy",
-        description="Default part of the __name__ column"
+    name_prefix: str = Field(
+        default="",
+        description="Prefix for the __name__ column (prepended to indicator groups)"
     )
-    name_position: Literal["prefix", "postfix"] = Field(
-        default="prefix",
-        description="Position of the default name (prefix or postfix)"
+    name_postfix: str = Field(
+        default="",
+        description="Postfix for the __name__ column (appended after indicator groups)"
     )
     preview_limit: int = Field(
         default=100,
@@ -123,13 +123,13 @@ class GeneratorGenerateRequest(BaseModel):
         default_factory=list,
         description="List of dependencies between parameters"
     )
-    name_default: str = Field(
-        default="Strategy",
-        description="Default part of the __name__ column"
+    name_prefix: str = Field(
+        default="",
+        description="Prefix for the __name__ column (prepended to indicator groups)"
     )
-    name_position: Literal["prefix", "postfix"] = Field(
-        default="prefix",
-        description="Position of the default name (prefix or postfix)"
+    name_postfix: str = Field(
+        default="",
+        description="Postfix for the __name__ column (appended after indicator groups)"
     )
     save_path: Optional[str] = Field(
         default=None,

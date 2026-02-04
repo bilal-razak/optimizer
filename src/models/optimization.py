@@ -203,6 +203,14 @@ class StepHeatmapRequest(BaseModel):
         default=None,
         description="Specific values of const_param to show (None = all)"
     )
+    const_param2: Optional[str] = Field(
+        default=None,
+        description="Second constant parameter (4D grid - creates heatmaps per const1/const2 combination)"
+    )
+    const_values2: Optional[List[Any]] = Field(
+        default=None,
+        description="Filter values for const_param2 (None = all)"
+    )
     metrics: Optional[List[str]] = Field(
         default=None,
         description="Metrics to display (None = all available)"
@@ -222,7 +230,8 @@ class StepHeatmapResponse(BaseModel):
     num_heatmaps: int = Field(..., description="Number of heatmaps generated")
     x_param: str
     y_param: str
-    const_param: Optional[str]
+    const_param: Optional[str] = None
+    const_param2: Optional[str] = None
     metrics_shown: List[str]
 
 
@@ -286,8 +295,8 @@ class StepKMeansResponse(BaseModel):
         ..., description="K-Means cluster statistics for default metric (sharpe_ratio)"
     )
     k_used: int = Field(..., description="Number of clusters used")
-    num_variants_in_best_kmeans: int = Field(
-        ..., description="Variants in best K-Means cluster (filtered for HDBSCAN)"
+    total_variants: int = Field(
+        ..., description="Total number of variants in K-Means clustering"
     )
     all_cluster_stats: Optional[Dict[str, List[Dict[str, Any]]]] = Field(
         default=None,
@@ -316,6 +325,11 @@ class HDBSCANGridConfig(BaseModel):
 class StepHDBSCANGridRequest(BaseModel):
     """Request for Step 5: HDBSCAN grid search."""
     session_id: str = Field(..., description="Session ID from previous step")
+    num_best_for_hdbscan: int = Field(
+        default=1,
+        ge=1,
+        description="Number of best K-Means clusters to filter for HDBSCAN"
+    )
     grid_config: HDBSCANGridConfig = Field(
         default_factory=HDBSCANGridConfig,
         description="HDBSCAN grid search configuration"
@@ -349,6 +363,15 @@ class StepHDBSCANGridResponse(BaseModel):
     available_configs: List[List[int]] = Field(
         ..., description="List of [min_cluster_size, min_samples] pairs"
     )
+    num_best_clusters_selected: int = Field(
+        ..., description="Number of best K-Means clusters selected for HDBSCAN"
+    )
+    best_kmeans_cluster_ids: List[int] = Field(
+        ..., description="IDs of the best K-Means clusters selected for HDBSCAN"
+    )
+    num_variants_filtered: int = Field(
+        ..., description="Number of variants after filtering best K-Means clusters"
+    )
 
 
 class StepHDBSCANFinalRequest(BaseModel):
@@ -356,6 +379,12 @@ class StepHDBSCANFinalRequest(BaseModel):
     session_id: str = Field(..., description="Session ID from previous step")
     min_cluster_size: int = Field(..., ge=2, description="Selected min_cluster_size")
     min_samples: int = Field(..., ge=1, description="Selected min_samples")
+    threshold_cluster_prob: float = Field(
+        default=0.9,
+        ge=0.0,
+        le=1.0,
+        description="Probability threshold for core cluster members"
+    )
     ranking_metric: RankingMetric = Field(
         default=RankingMetric.SHARPE_RATIO,
         description="Metric for ranking clusters"
@@ -413,7 +442,11 @@ class StepBestClustersResponse(BaseModel):
     )
     cluster_const_values: Optional[List[List[Any]]] = Field(
         default=None,
-        description="Constant parameter values present in each cluster (for dropdown filtering)"
+        description="Constant parameter 1 values present in each cluster (for dropdown filtering)"
+    )
+    cluster_const_values2: Optional[List[List[Any]]] = Field(
+        default=None,
+        description="Constant parameter 2 values present in each cluster (for dropdown filtering in 4D mode)"
     )
     cluster_core_counts: Optional[List[int]] = Field(
         default=None,
@@ -445,6 +478,7 @@ class StepGenerateReportRequest(BaseModel):
     x_param: str = Field(..., description="X-axis parameter for heatmaps")
     y_param: str = Field(..., description="Y-axis parameter for heatmaps")
     const_param: Optional[str] = Field(default=None, description="Constant parameter for heatmaps")
+    const_param2: Optional[str] = Field(default=None, description="Second constant parameter for 4D heatmaps")
 
     # Step 2b: Shortlist config
     shortlist_enabled: bool = Field(default=False, description="Whether shortlisting is enabled")

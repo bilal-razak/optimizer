@@ -407,31 +407,22 @@
         <!-- Naming Configuration -->
         <section class="generator-section">
             <h3>Naming Configuration</h3>
-            <p class="hint">Configure how the __name__ column is formatted.</p>
+            <p class="hint">Configure how the __name__ column is formatted. Leave blank if not needed.</p>
 
             <div class="naming-config">
                 <div class="form-group">
-                    <label for="name-default">Default Name</label>
-                    <input type="text" id="name-default" value="Strategy" placeholder="e.g., Strategy_v1">
+                    <label for="name-prefix">Prefix</label>
+                    <input type="text" id="name-prefix" value="" placeholder="e.g., Strategy_">
                 </div>
                 <div class="form-group">
-                    <label>Position</label>
-                    <div class="radio-group">
-                        <label class="radio-label">
-                            <input type="radio" name="name-position" value="prefix" checked>
-                            Prefix
-                        </label>
-                        <label class="radio-label">
-                            <input type="radio" name="name-position" value="postfix">
-                            Postfix
-                        </label>
-                    </div>
+                    <label for="name-postfix">Postfix</label>
+                    <input type="text" id="name-postfix" value="" placeholder="e.g., _v1">
                 </div>
             </div>
 
             <div class="naming-preview">
                 <label>Preview:</label>
-                <span id="name-preview" class="preview-text">Strategyparam1[10]param2[20]</span>
+                <span id="name-preview" class="preview-text">EMA[1, 10] + ADX[5, 14]</span>
             </div>
         </section>
 
