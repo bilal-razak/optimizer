@@ -11,7 +11,7 @@ import pandas as pd
 from src.models.generator import DependencyConfig, ParameterConfig
 
 
-def generate_parameter_ranges(params: List[ParameterConfig]) -> Dict[str, List[float]]:
+def generate_parameter_ranges(params: List[ParameterConfig]) -> Dict[str, List]:
     """
     Generate value ranges for each parameter.
 
@@ -19,7 +19,7 @@ def generate_parameter_ranges(params: List[ParameterConfig]) -> Dict[str, List[f
         params: List of parameter configurations
 
     Returns:
-        Dictionary mapping parameter names to lists of values
+        Dictionary mapping parameter names to lists of values (int or float)
     """
     ranges = {}
     for param in params:
@@ -30,7 +30,13 @@ def generate_parameter_ranges(params: List[ParameterConfig]) -> Dict[str, List[f
         values = values[values <= param.max_value + 1e-10]
         # Round to avoid floating point precision issues
         values = np.round(values, decimals=10)
-        ranges[param.name] = values.tolist()
+
+        # Convert to int if all values are whole numbers, otherwise keep as float
+        values_list = values.tolist()
+        if all(v == int(v) for v in values_list):
+            values_list = [int(v) for v in values_list]
+
+        ranges[param.name] = values_list
     return ranges
 
 
@@ -137,7 +143,7 @@ def _safe_eval(expr: str, context: Dict[str, float]) -> Any:
 def apply_dependencies(
     df: pd.DataFrame,
     dependencies: List[DependencyConfig]
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, List[str]]:
     """
     Apply dependencies to filter/modify combinations.
 
@@ -146,10 +152,10 @@ def apply_dependencies(
         dependencies: List of dependency configurations
 
     Returns:
-        Filtered/modified DataFrame
+        Tuple of (filtered/modified DataFrame, list of dependent parameter names)
     """
     if not dependencies:
-        return df
+        return df, []
 
     result = df.copy()
     dependent_params = []  # Track dependent parameters created by expressions

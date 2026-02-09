@@ -137,7 +137,7 @@ class GeneratorGenerateRequest(BaseModel):
     )
     filename_prefix: str = Field(
         default="combinations",
-        description="Prefix for the generated CSV filename(s)"
+        description="Filename for the generated CSV (without .csv extension). If multiple files, _part1, _part2 etc. will be appended."
     )
 
 
