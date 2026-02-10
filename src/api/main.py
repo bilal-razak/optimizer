@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.api.routes import generator_router, optimization_router, steps_router
+from src.api.routes import compare_router, generator_router, optimization_router, steps_router
 
 # Paths
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
@@ -57,6 +57,7 @@ app.mount("/static", StaticFiles(directory=FRONTEND_DIR / "static"), name="stati
 app.include_router(optimization_router)
 app.include_router(steps_router)
 app.include_router(generator_router)
+app.include_router(compare_router)
 
 
 @app.get("/", response_class=HTMLResponse, tags=["frontend"])
@@ -77,6 +78,13 @@ async def serve_optimizer():
 async def serve_generator():
     """Serve the combination generator HTML."""
     html_path = FRONTEND_DIR / "templates" / "generator.html"
+    return HTMLResponse(content=html_path.read_text())
+
+
+@app.get("/compare", response_class=HTMLResponse, tags=["frontend"])
+async def serve_compare():
+    """Serve the compare variants HTML."""
+    html_path = FRONTEND_DIR / "templates" / "compare.html"
     return HTMLResponse(content=html_path.read_text())
 
 

@@ -146,17 +146,19 @@ async def generate_csv(request: GeneratorGenerateRequest):
 
         # Generate unique session ID for this generation
         session_id = str(uuid.uuid4())[:8]
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
         filenames = []
         download_urls = []
         saved_files = []
 
+        # Use the provided filename directly (without timestamp prefix)
+        base_filename = request.filename_prefix or "combinations"
+
         for i, chunk in enumerate(chunks):
             if num_files == 1:
-                filename = f"{request.filename_prefix}_{timestamp}.csv"
+                filename = f"{base_filename}.csv"
             else:
-                filename = f"{request.filename_prefix}_{timestamp}_part{i + 1}.csv"
+                filename = f"{base_filename}_part{i + 1}.csv"
 
             # Save to temp directory for download
             temp_path = TEMP_DIR / f"{session_id}_{filename}"

@@ -617,7 +617,7 @@ async function loadDirectory(path) {
         elements.currentPathInput.value = data.current_path;
 
         // Render directory contents (only directories)
-        const directories = data.contents.filter(item => item.is_directory);
+        const directories = data.directories || [];
 
         if (directories.length === 0) {
             elements.dirList.innerHTML = '<li class="empty-message">No subdirectories</li>';

@@ -1,0 +1,1056 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Compare Variants - Optimizer Agent</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <style>
+        /* Compare-specific styles */
+        .compare-section {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            padding: 25px;
+            margin-bottom: 25px;
+            border: 1px solid var(--border-color);
+        }
+
+        .compare-section h3 {
+            font-size: 1.2rem;
+            margin-bottom: 20px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-color);
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            background: var(--primary-color);
+            color: white;
+            border-radius: 50%;
+            font-size: 0.9rem;
+            font-weight: 600;
+        }
+
+        .step-complete .step-number {
+            background: var(--success-color);
+        }
+
+        .step-disabled {
+            opacity: 0.5;
+            pointer-events: none;
+        }
+
+        /* File Browser */
+        .file-browser {
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            overflow: hidden;
+        }
+
+        .browser-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 15px;
+            background: var(--bg-color);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .browser-path {
+            flex: 1;
+            font-family: monospace;
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .browser-content {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .browser-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 15px;
+            cursor: pointer;
+            transition: background 0.2s;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .browser-item:last-child {
+            border-bottom: none;
+        }
+
+        .browser-item:hover {
+            background: var(--card-bg-hover);
+        }
+
+        .browser-item.selected {
+            background: var(--primary-glow);
+        }
+
+        .browser-item-icon {
+            font-size: 1.2rem;
+            width: 24px;
+            text-align: center;
+        }
+
+        .browser-item-name {
+            flex: 1;
+            font-size: 0.95rem;
+        }
+
+        .browser-item-size {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+        }
+
+        /* Selected Files */
+        .selected-files {
+            margin-top: 15px;
+        }
+
+        .selected-files-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .selected-count {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+        }
+
+        .selected-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .selected-file-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--primary-glow);
+            border: 1px solid var(--primary-color);
+            border-radius: var(--radius);
+            font-size: 0.85rem;
+            color: var(--primary-color);
+        }
+
+        .remove-file-btn {
+            cursor: pointer;
+            font-size: 1rem;
+            opacity: 0.7;
+        }
+
+        .remove-file-btn:hover {
+            opacity: 1;
+        }
+
+        /* Column Info */
+        .column-info {
+            padding: 12px 15px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            margin-bottom: 20px;
+        }
+
+        .column-info p {
+            margin: 0;
+            font-size: 0.9rem;
+        }
+
+        .column-info strong {
+            color: var(--primary-color);
+            font-family: monospace;
+        }
+
+        /* Alias Configuration */
+        .alias-config {
+            margin-bottom: 25px;
+        }
+
+        .alias-config h4 {
+            font-size: 1rem;
+            margin-bottom: 10px;
+            color: var(--text-color);
+        }
+
+        .alias-inputs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .alias-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .alias-input-group label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            font-family: monospace;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .alias-input-group input {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            background: var(--card-bg);
+            color: var(--text-color);
+            font-size: 0.9rem;
+        }
+
+        .alias-input-group input:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        /* Threshold Configuration */
+        .threshold-config {
+            margin-top: 25px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .threshold-config h4 {
+            font-size: 1rem;
+            margin-bottom: 15px;
+            color: var(--text-color);
+        }
+
+        .threshold-inputs {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        .threshold-inputs .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .threshold-inputs label {
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .threshold-inputs input[type="number"] {
+            width: 100%;
+        }
+
+        .form-hint {
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        /* Common Date Range Info */
+        .common-date-range-info {
+            padding: 12px 15px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            border: 1px solid var(--primary-color);
+            border-left: 4px solid var(--primary-color);
+            margin-bottom: 20px;
+        }
+
+        .common-date-range-info p {
+            margin: 0;
+            font-size: 0.9rem;
+        }
+
+        .common-date-range-info p:first-child {
+            margin-bottom: 5px;
+        }
+
+        /* Date Filter Section */
+        .date-filter-section {
+            margin-top: 20px;
+            padding: 15px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+        }
+
+        .date-filter-section h4 {
+            font-size: 1rem;
+            margin-bottom: 12px;
+            color: var(--text-color);
+        }
+
+        .date-filter-inputs {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: 15px;
+        }
+
+        .date-filter-inputs .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .date-filter-inputs label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .date-filter-inputs input[type="date"] {
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            background: var(--card-bg);
+            color: var(--text-color);
+            font-size: 0.9rem;
+        }
+
+        .date-filter-actions {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+        }
+
+        /* Performance Charts Section */
+        .performance-charts {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border-color);
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 25px;
+        }
+
+        .performance-chart-section h4 {
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+            color: var(--text-color);
+        }
+
+        .performance-chart-container {
+            height: 75vh;
+            min-height: 500px;
+            max-height: 900px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            padding: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        /* Ensure Plotly chart fills container without overflow */
+        .performance-chart-container .js-plotly-plot,
+        .performance-chart-container .plotly,
+        .performance-chart-container .plot-container {
+            width: 100% !important;
+            height: 100% !important;
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        .performance-chart-container .main-svg {
+            max-width: 100%;
+            max-height: 100%;
+        }
+
+        /* Variant Toggle Controls */
+        .variant-toggles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 15px;
+            padding: 12px 15px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+        }
+
+        .variant-toggles-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-color);
+            margin-right: 10px;
+            display: flex;
+            align-items: center;
+        }
+
+        .variant-toggle-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .variant-toggle-item:hover {
+            background: var(--card-bg-hover);
+        }
+
+        .variant-toggle-item input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+            accent-color: var(--primary-color);
+        }
+
+        .variant-toggle-item label {
+            font-size: 0.85rem;
+            color: var(--text-color);
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .variant-color-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+
+        /* Chart Tabs */
+        .chart-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .chart-tab {
+            padding: 8px 16px;
+            background: var(--bg-color);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            cursor: pointer;
+            font-size: 0.9rem;
+            color: var(--text-color);
+            transition: all 0.2s;
+        }
+
+        .chart-tab:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        .chart-tab.active {
+            background: var(--primary-color);
+            border-color: var(--primary-color);
+            color: white;
+        }
+
+        /* Chart Container */
+        .chart-container {
+            min-height: 400px;
+            background: var(--bg-color);
+            border-radius: var(--radius);
+            border: 1px solid var(--border-color);
+            padding: 15px;
+        }
+
+        /* Comparison Table */
+        .comparison-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 0.9rem;
+        }
+
+        .comparison-table th,
+        .comparison-table td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .comparison-table th {
+            background: var(--bg-color);
+            font-weight: 600;
+            color: var(--text-color);
+            position: sticky;
+            top: 0;
+        }
+
+        .comparison-table th:first-child {
+            position: sticky;
+            left: 0;
+            z-index: 2;
+        }
+
+        .comparison-table td:first-child {
+            font-weight: 500;
+            background: var(--card-bg);
+            position: sticky;
+            left: 0;
+        }
+
+        .comparison-table tr:hover td {
+            background: var(--card-bg-hover);
+        }
+
+        .comparison-table tr:hover td:first-child {
+            background: var(--card-bg-hover);
+        }
+
+        .table-wrapper {
+            overflow-x: auto;
+            max-height: 500px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+        }
+
+        /* Section Header Row */
+        .section-header-row td {
+            background: #e5e7eb !important;
+            color: #1f2937 !important;
+            font-weight: 600 !important;
+            font-size: 0.9rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            padding: 10px 15px !important;
+        }
+
+        .section-header-row:hover td {
+            background: #e5e7eb !important;
+        }
+
+        /* Best/Worst value cell backgrounds - Light theme (darker colors) */
+        .best-value {
+            background-color: #22c55e !important;
+            color: #000000 !important;
+            font-weight: 600;
+        }
+
+        .worst-value {
+            background-color: #ef4444 !important;
+            color: #000000 !important;
+            font-weight: 600;
+        }
+
+        /* Dark theme - even darker/more saturated colors */
+        .dark-theme .best-value {
+            background-color: #16a34a !important;
+            color: #ffffff !important;
+        }
+
+        .dark-theme .worst-value {
+            background-color: #dc2626 !important;
+            color: #ffffff !important;
+        }
+
+        /* Action Buttons */
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        /* Export Buttons */
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            margin-left: auto;
+        }
+
+        .export-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 8px 16px;
+            font-size: 0.85rem;
+            border-radius: var(--radius);
+            cursor: pointer;
+            transition: all 0.2s;
+            border: 1px solid var(--border-color);
+            background: var(--card-bg);
+            color: var(--text-color);
+        }
+
+        .export-btn:hover {
+            background: var(--card-bg-hover);
+            border-color: var(--primary-color);
+        }
+
+        .export-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .export-btn .icon {
+            font-size: 1rem;
+        }
+
+        .chart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        /* Loading Spinner */
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .spinner {
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--primary-color);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-muted);
+        }
+
+        .empty-state-icon {
+            font-size: 3rem;
+            margin-bottom: 15px;
+            opacity: 0.5;
+        }
+
+        /* Export Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            visibility: hidden;
+            opacity: 0;
+            transition: visibility 0s linear 0.2s, opacity 0.2s ease;
+        }
+
+        .modal-overlay.show {
+            visibility: visible;
+            opacity: 1;
+            transition-delay: 0s;
+        }
+
+        .modal-overlay .export-modal-content {
+            background: var(--card-bg);
+            border-radius: var(--radius-lg);
+            padding: 25px;
+            width: 90%;
+            max-width: 500px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+            border: 1px solid var(--border-color);
+        }
+
+        .export-modal-content .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .export-modal-content .modal-header h3 {
+            margin: 0;
+            font-size: 1.2rem;
+            color: var(--text-color);
+        }
+
+        .export-modal-content .modal-close {
+            background: none;
+            border: none;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: var(--text-muted);
+            padding: 0;
+            line-height: 1;
+        }
+
+        .export-modal-content .modal-close:hover {
+            color: var(--text-color);
+        }
+
+        .export-modal-content .modal-body {
+            margin-bottom: 20px;
+        }
+
+        .export-modal-content .modal-body .form-group {
+            margin-bottom: 15px;
+        }
+
+        .export-modal-content .modal-body label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 500;
+            color: var(--text-color);
+        }
+
+        .export-modal-content .modal-body input[type="text"] {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius);
+            background: var(--bg-color);
+            color: var(--text-color);
+            font-size: 0.95rem;
+        }
+
+        .export-modal-content .modal-body input[type="text"]:focus {
+            outline: none;
+            border-color: var(--primary-color);
+        }
+
+        .export-modal-content .modal-body .form-hint {
+            margin-top: 5px;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+        }
+
+        .export-modal-content .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            padding-top: 15px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .threshold-inputs {
+                grid-template-columns: 1fr;
+            }
+
+            .chart-tabs {
+                gap: 5px;
+            }
+
+            .chart-tab {
+                padding: 6px 12px;
+                font-size: 0.85rem;
+            }
+
+            .date-filter-inputs {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .date-filter-actions {
+                width: 100%;
+                justify-content: flex-start;
+            }
+
+            .performance-chart-container {
+                height: 60vh;
+                min-height: 400px;
+            }
+
+            .compare-section {
+                padding: 15px;
+            }
+
+            .compare-section h3 {
+                font-size: 1rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .performance-chart-container {
+                height: 50vh;
+                min-height: 350px;
+            }
+
+            .chart-tab {
+                padding: 5px 10px;
+                font-size: 0.8rem;
+            }
+
+            .btn {
+                padding: 8px 12px;
+                font-size: 0.85rem;
+            }
+        }
+    </style>
+</head>
+<body class="light-theme">
+    <div class="container">
+        <!-- Navigation Header -->
+        <nav class="nav-header">
+            <a href="/" class="nav-back">
+                <span class="nav-icon">&larr;</span>
+                <span>Back to Home</span>
+            </a>
+            <span class="nav-title">Compare Variants</span>
+            <button id="theme-toggle-btn" class="btn btn-small theme-toggle">
+                <span class="theme-icon">&#9790;</span> Dark Mode
+            </button>
+        </nav>
+
+        <!-- Header -->
+        <header class="header">
+            <h1>Compare Variants</h1>
+            <p class="subtitle">Compare performance metrics across multiple strategy variants</p>
+        </header>
+
+        <!-- Step 1: Select Files -->
+        <section class="compare-section" id="step-1">
+            <h3><span class="step-number">1</span> Select CSV Files</h3>
+
+            <div class="file-browser">
+                <div class="browser-header">
+                    <button class="btn btn-small" id="browse-up-btn" title="Go up one directory">&#8593; Up</button>
+                    <span class="browser-path" id="browser-path">Loading...</span>
+                    <button class="btn btn-small btn-primary" id="browse-home-btn">Home</button>
+                </div>
+                <div class="browser-content" id="browser-content">
+                    <div class="loading"><div class="spinner"></div>Loading...</div>
+                </div>
+            </div>
+
+            <div class="selected-files">
+                <div class="selected-files-header">
+                    <span class="selected-count"><span id="selected-count">0</span> files selected</span>
+                    <button class="btn btn-small" id="clear-selection-btn">Clear All</button>
+                </div>
+                <div class="selected-list" id="selected-list"></div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="load-files-btn" disabled>Load Selected Files</button>
+            </div>
+        </section>
+
+        <!-- Step 2: Configure Aliases & Thresholds -->
+        <section class="compare-section step-disabled" id="step-2">
+            <h3><span class="step-number">2</span> Configure Variants</h3>
+
+            <!-- Variant Alias Mapping -->
+            <div class="alias-config">
+                <h4>Variant Names</h4>
+                <p class="form-hint">Assign display names to each variant (used in tables and charts)</p>
+                <div class="alias-inputs" id="alias-inputs">
+                    <!-- Populated dynamically after loading files -->
+                </div>
+            </div>
+
+            <div class="threshold-config">
+                <h4>Threshold Settings</h4>
+                <div class="threshold-inputs">
+                    <div class="form-group">
+                        <label for="threshold-x">Weeks PnL% Below (%)</label>
+                        <input type="number" id="threshold-x" class="form-control" value="-5" step="0.5">
+                        <small class="form-hint">Count weeks where PnL% is below this threshold</small>
+                    </div>
+                    <div class="form-group">
+                        <label for="threshold-y">Weeks Min Notional Below (%)</label>
+                        <input type="number" id="threshold-y" class="form-control" value="-10" step="0.5">
+                        <small class="form-hint">Count weeks where Notional min pnl is below this threshold</small>
+                    </div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" id="calculate-metrics-btn">Calculate Metrics</button>
+            </div>
+        </section>
+
+        <!-- Step 3: Results -->
+        <section class="compare-section step-disabled" id="step-3">
+            <h3 class="step-complete"><span class="step-number">3</span> Performance Charts</h3>
+
+            <!-- Common Date Range Info -->
+            <div class="common-date-range-info" id="common-date-range-info" style="display: none;">
+                <p><strong>Common Date Range:</strong> <span id="common-date-range-text"></span></p>
+                <p class="form-hint">All variants are aligned to this common date range for fair comparison</p>
+            </div>
+
+            <!-- Date Filter for Performance Charts -->
+            <div class="date-filter-section">
+                <h4>Date Range Filter</h4>
+                <div class="date-filter-inputs">
+                    <div class="form-group">
+                        <label for="date-from">From</label>
+                        <input type="date" id="date-from" class="form-control">
+                    </div>
+                    <div class="form-group">
+                        <label for="date-to">To</label>
+                        <input type="date" id="date-to" class="form-control">
+                    </div>
+                    <div class="form-group date-filter-actions">
+                        <button class="btn btn-primary btn-small" id="apply-date-filter-btn">Apply Filter</button>
+                        <button class="btn btn-small" id="clear-date-filter-btn">Clear</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Variant Visibility Toggles -->
+            <div class="variant-toggles" id="variant-toggles" style="display: none;">
+                <span class="variant-toggles-label">Show Variants:</span>
+                <!-- Populated dynamically after metrics calculation -->
+            </div>
+
+            <!-- Combined Cumulative PnL and Drawdown Chart -->
+            <div class="performance-charts">
+                <div class="performance-chart-section">
+                    <h4>Cumulative PnL with Drawdown</h4>
+                    <div class="performance-chart-container" id="cumulative-chart-container">
+                        <!-- Chart will be loaded after metrics calculation -->
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Step 4: Visualizations -->
+        <section class="compare-section step-disabled" id="step-4">
+            <h3><span class="step-number">4</span> Visualizations</h3>
+
+            <!-- Variant Visibility Toggles for Table -->
+            <div class="variant-toggles" id="table-variant-toggles" style="display: none;">
+                <span class="variant-toggles-label">Show Variants:</span>
+                <!-- Populated dynamically after metrics calculation -->
+            </div>
+
+            <div class="chart-header">
+                <div class="chart-tabs" id="chart-tabs">
+                    <button class="chart-tab active" data-chart="table">Table</button>
+                    <button class="chart-tab" data-chart="grouped_bar">Bar Chart</button>
+                    <button class="chart-tab" data-chart="radar">Radar</button>
+                    <button class="chart-tab" data-chart="ranking_table">Rankings</button>
+                </div>
+
+                <div class="export-buttons" id="export-buttons">
+                    <button class="export-btn" id="export-csv-btn" title="Export table as CSV">
+                        <span class="icon">&#128196;</span> Export CSV
+                    </button>
+                    <button class="export-btn" id="export-pdf-btn" title="Export table as PDF">
+                        <span class="icon">&#128462;</span> Export PDF
+                    </button>
+                </div>
+            </div>
+
+            <div class="chart-container" id="chart-container">
+                <div class="empty-state">
+                    <div class="empty-state-icon">&#128202;</div>
+                    <p>Select a chart type to visualize comparison</p>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <!-- Export Modal (for both CSV and PDF) -->
+    <div class="modal-overlay" id="export-modal">
+        <div class="export-modal-content">
+            <div class="modal-header">
+                <h3 id="export-modal-title">Export as PDF</h3>
+                <button class="modal-close" id="modal-close-btn">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="export-title">Report Title</label>
+                    <input type="text" id="export-title" placeholder="Variant Comparison Report" value="Variant Comparison Report">
+                    <p class="form-hint">Title displayed at the top of the report</p>
+                </div>
+                <div class="form-group">
+                    <label for="export-filename">Filename</label>
+                    <input type="text" id="export-filename" placeholder="compare_variants" value="compare_variants">
+                    <p class="form-hint" id="export-extension-hint">The .pdf extension will be added automatically</p>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn" id="modal-cancel-btn">Cancel</button>
+                <button class="btn btn-primary" id="modal-export-btn">Export PDF</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/compare.js"></script>
+    <script>
+        // Theme toggle functionality
+        document.addEventListener('DOMContentLoaded', function() {
+            const themeToggleBtn = document.getElementById('theme-toggle-btn');
+            const body = document.body;
+
+            // Check for saved theme preference
+            const savedTheme = localStorage.getItem('theme');
+            if (savedTheme === 'dark') {
+                body.classList.remove('light-theme');
+                body.classList.add('dark-theme');
+                updateThemeButton(true);
+            }
+
+            themeToggleBtn.addEventListener('click', function() {
+                const isDark = body.classList.contains('dark-theme');
+                if (isDark) {
+                    body.classList.remove('dark-theme');
+                    body.classList.add('light-theme');
+                    localStorage.setItem('theme', 'light');
+                } else {
+                    body.classList.remove('light-theme');
+                    body.classList.add('dark-theme');
+                    localStorage.setItem('theme', 'dark');
+                }
+                updateThemeButton(!isDark);
+                // Re-render charts with new theme if one is displayed
+                if (window.compareApp && window.compareApp.state.currentChart) {
+                    window.compareApp.generateChart(window.compareApp.state.currentChart);
+                }
+                // Re-render performance chart if metrics have been calculated
+                if (window.compareApp && window.compareApp.state.variantMetrics && window.compareApp.state.variantMetrics.length > 0) {
+                    window.compareApp.generateCumulativeChart();
+                }
+            });
+
+            function updateThemeButton(isDark) {
+                if (isDark) {
+                    themeToggleBtn.innerHTML = '<span class="theme-icon">&#9788;</span> Light Mode';
+                } else {
+                    themeToggleBtn.innerHTML = '<span class="theme-icon">&#9790;</span> Dark Mode';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
