@@ -123,7 +123,7 @@ async def get_csv_columns(csv_paths: str) -> Dict[str, Any]:
         reference_file = None
 
         for path in paths:
-            df = pd.read_csv(path, nrows=0)
+            df = pd.read_csv(path, nrows=0, on_bad_lines='warn')
             current_columns = set(df.columns.tolist())
 
             if reference_columns is None:
@@ -144,7 +144,7 @@ async def get_csv_columns(csv_paths: str) -> Dict[str, Any]:
                     )
 
         # Return columns from first file (all are validated to match)
-        df = pd.read_csv(paths[0], nrows=0)
+        df = pd.read_csv(paths[0], nrows=0, on_bad_lines='warn')
         return {"columns": df.columns.tolist(), "num_files": len(paths), "valid": True}
     except HTTPException:
         raise
@@ -174,7 +174,7 @@ async def preview_csv(csv_path: str, rows: int = 5) -> Dict[str, Any]:
         )
 
     try:
-        df = pd.read_csv(csv_path, nrows=rows)
+        df = pd.read_csv(csv_path, nrows=rows, on_bad_lines='warn')
         return {
             "columns": df.columns.tolist(),
             "data": df.to_dict('records'),

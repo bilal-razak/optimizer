@@ -230,7 +230,7 @@ async def load_files(request: CompareLoadRequest) -> CompareLoadResponse:
             )
 
         try:
-            df = pd.read_csv(csv_path)
+            df = pd.read_csv(csv_path, on_bad_lines='warn')
         except Exception as e:
             raise HTTPException(
                 status_code=400,

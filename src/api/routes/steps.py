@@ -97,7 +97,7 @@ async def step_load_data(request: StepLoadDataRequest) -> StepLoadDataResponse:
         reference_columns = None
 
         for i, csv_path in enumerate(request.csv_paths):
-            df = pd.read_csv(csv_path)
+            df = pd.read_csv(csv_path, on_bad_lines='warn')
 
             # Validate columns match across all files
             if reference_columns is None:

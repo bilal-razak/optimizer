@@ -106,7 +106,7 @@ class OptimizationPipeline:
 
     def _load_data(self) -> None:
         """Load CSV data from file path."""
-        self.raw_df = pd.read_csv(self.request.csv_path)
+        self.raw_df = pd.read_csv(self.request.csv_path, on_bad_lines='warn')
 
     def _prepare_data(self) -> None:
         """Prepare data by calculating derived metrics."""
