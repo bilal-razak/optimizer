@@ -394,7 +394,7 @@ def calculate_variant_metrics(
     name: str,
     pnl_column: str = "Pnl%",
     trades_column: str = "Trades",
-    min_notional_column: str = "",
+    min_notional_column: str = "Notional min pnl",
     expiry_column: str = "Expiry",
     threshold_x_pct: float = -5.0,
     threshold_y_pct: float = -10.0
